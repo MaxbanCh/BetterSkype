@@ -30,16 +30,6 @@ int connection(int ds, char *ip, struct sockaddr_in *adServ)
 	return res;
 }
 
-// int connect(int port, char *ip)
-// {
-// 	int dS = createSocket();
-// 	struct sockaddr_in *adServer = adServ(port);
-
-// 	int res = connection(dS, port, adServer);
-
-// 	return dS;
-// }
-
 void debugConnexion(int res)
 {
 	if (res == 0)
@@ -54,10 +44,7 @@ void debugConnexion(int res)
 ssize_t sendMessage(int dS, struct sockaddr_in *adServer, char *message)
 {
 	socklen_t lgA = sizeof(struct sockaddr_in);
-	printf("size of msg : %d\n", sizeof(message));
-
-
-	return sendto(dS, message, 256, 0, (struct sockaddr *)adServer, lgA);
+	return sendto(dS, message, 1024, 0, (struct sockaddr *)adServer, lgA);
 }
 
 void debugSendMessage(ssize_t snd)
@@ -68,7 +55,26 @@ void debugSendMessage(ssize_t snd)
 	return ;
 }
 
+char *createMessage(char *ip, char *dest, char *msg)
+{
+	char *message = malloc(1024*sizeof(char));
+	
+	strcpy(message, ip);
+	strcat(message, "//");
 
+	strcat(message, dest);
+	strcat(message, "//");
+
+	strcat(message, "1");
+	strcat(message, "//");
+
+	strcat(message, "1");
+	strcat(message, "/#/#00");
+
+	strcat(message, msg);
+
+	return message;
+}
 
 int main()
 {
@@ -78,12 +84,13 @@ int main()
 	int res = connection(dS, "127.0.0.1", adServer);
 	debugConnexion(res);
 
-	char messagesend[256] = "Ouais ouais ouais !";
+	char messagesend[1024] = "Ouais ouais ouais !";
+	char *message = createMessage("127.0.0.1", "nabilb", messagesend);
 
-	ssize_t snd = sendMessage(dS, adServer, messagesend);
+	ssize_t snd = sendMessage(dS, adServer, message);
 	debugSendMessage(snd);
 	
-	char messagercv[256];
+	char messagercv[1024];
 
 	recvfrom(dS, messagercv, strlen(messagercv), 0, NULL, NULL);
 	printf("reponse : %s \n", messagercv);
