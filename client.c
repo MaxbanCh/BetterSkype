@@ -1,14 +1,28 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h> 
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <sys/wait.h>
+
+#define SERVER_IP   "127.0.0.1"
+#define SERVER_PORT 12345
+#define BUFFER_MAX    1024
+
+static void handleSigint(int sig) {
+    (void)sig;
+    printf("\nArrêt client\n");
+    exit(EXIT_SUCCESS);
+}
+
 
 int createSocket()
 {
 	return socket(PF_INET, SOCK_DGRAM, 0);
+
 }
 
 struct sockaddr_in *adServ(int port)
@@ -76,27 +90,65 @@ char *createMessage(char *ip, char *dest, char *msg)
 	return message;
 }
 
-int main()
-{
-	int dS = createSocket();
-	struct sockaddr_in *adServer = adServ(12345);
+int main(void) {
+	signal(SIGINT, handleSigint);
+    int dS = createSocket();
+	if (dS < 0) {
+		perror("socket");
+		exit(EXIT_FAILURE);
+	}
+    struct sockaddr_in *adServer = adServ(SERVER_PORT);
 
-	int res = connection(dS, "127.0.0.1", adServer);
-	debugConnexion(res);
+    if ( connection(dS, SERVER_IP, adServer) != 0 ) {
+        debugConnexion(-1);
+        exit(EXIT_FAILURE);
+    }
+    debugConnexion(0);
 
-	char messagesend[1024] = "Ouais ouais ouais !";
-	char *message = createMessage("127.0.0.1", "nabilb", messagesend);
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork"); 
+        exit(EXIT_FAILURE);
+    }
 
-	ssize_t snd = sendMessage(dS, adServer, message);
-	debugSendMessage(snd);
-	
-	char messagercv[1024];
-	memset(messagercv, 0, sizeof(messagercv));
+    if (pid == 0) {
+        // ── Processus enfant : réception bloquante des ACKs ──
+        char buf[BUFFER_MAX];
+        while (1) {
+            ssize_t r = recvfrom(dS, buf, BUFFER_MAX-1, 0, NULL, NULL);
+            if (r < 0) {
+                perror("recvfrom"); 
+                _exit(EXIT_FAILURE);
+            }
+            buf[r] = '\0';
+            write(STDOUT_FILENO, "\n ", 3);
+            write(STDOUT_FILENO, buf, r);
+            write(STDOUT_FILENO, "\n> ", 3);
+        }
+    } else {
+        // ── Processus parent : envoi bloquant via read() ──
+        char line[BUFFER_MAX];
+        write(STDOUT_FILENO, "> ", 2);
 
-	recvfrom(dS, messagercv, sizeof(messagercv), 0, NULL, NULL);
-	printf("reponse : %s \n", messagercv);
+        ssize_t n;
+        while ((n = read(STDIN_FILENO, line, BUFFER_MAX-1)) > 0) {
+            if (line[n-1] == '\n') n--;
+            line[n] = '\0';
 
-	close(dS);
+            // construction et envoi du message structuré
+            char *message = createMessage(SERVER_IP, "destPseudo", line);
+            ssize_t s = sendMessage(dS, adServer, message);
+            debugSendMessage(s);
+            free(message);
 
-	return 0;
+            write(STDOUT_FILENO, "> ", 2);
+        }
+
+        kill(pid, SIGTERM);
+        wait(NULL);
+        close(dS);
+        free(adServer);
+    }
+
+    return EXIT_SUCCESS;
 }

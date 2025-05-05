@@ -5,35 +5,17 @@
 #include <arpa/inet.h>
 #include "MessageInfo.h"  
 #include "serveur.h" 
+#include <signal.h>
 
 #define PORT         12345
 #define BUFFER_MAX   1024
 #define FIELD_DELIM   "//"
 #define PAYLOAD_DELIM "/#/#00"
 
-
-
-int main(void) {
-    int sockfd = initSocket();
-
-    char buffer[BUFFER_MAX]; 
-    struct sockaddr_in client;
-
-    while (1) {
-        ssize_t r = recvMessage(sockfd, buffer, sizeof(buffer), &client);
-        if (r < 0) break;
-
-        MessageInfo msg;
-        if (parseMessage(buffer, &msg) == 0) {
-            printMessage(&msg);
-        } else {
-            fprintf(stderr, "[WARN] parsing failed: %s\n", buffer);
-        }
-
-        sendAcR(sockfd, &client);
-    }
-    
-    return EXIT_SUCCESS;
+static void handleSigint(int sig) {
+    (void)sig;
+    printf("\nArrêt serveur\n");
+    exit(EXIT_SUCCESS);
 }
 
 // crée et bind la socket UDP
@@ -52,7 +34,7 @@ int initSocket(void) {
         close(fd); 
         exit(EXIT_FAILURE);
     }
-    printf("[INFO] Serveur UDP démarré sur le port %d\n", PORT);
+    printf("Serveur UDP démarré sur le port %d\n", PORT);
     return fd;
 }
 
@@ -127,4 +109,36 @@ void sendAcR(int sockfd, const struct sockaddr_in *cli) {
     if (sendto(sockfd, acR, strlen(acR), 0, (const struct sockaddr*)cli, len) < 0) {
         perror("sendto");
     }
+}
+
+int main() {
+    signal(SIGINT, handleSigint);
+    // Initialisation de la socket UDP
+    int sockfd = initSocket();
+
+    char buffer[BUFFER_MAX];
+    struct sockaddr_in client;
+
+    // Boucle infinie de réception / traitement / ACK
+    while (1) {
+        ssize_t r = recvMessage(sockfd, buffer, sizeof(buffer), &client);
+        if (r < 0) {
+            // en cas d’erreur, on continue à la prochaine itération
+            perror("recvMessage");
+            continue;
+        }
+
+        MessageInfo msg;
+        if (parseMessage(buffer, &msg) == 0) {
+            printMessage(&msg);
+        } else {
+            fprintf(stderr, "[WARN] parsing failed: %s\n", buffer);
+        }
+
+        // Envoi d’un accusé de réception (ACK) à l’expéditeur
+        sendAcR(sockfd, &client);
+    }
+
+    // jamais atteint
+    return EXIT_SUCCESS;
 }
