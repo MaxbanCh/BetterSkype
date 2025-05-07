@@ -3,7 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "MessageInfo.h"  // structure contenant les champs du message
+#include "message.h"  // structure contenant les champs du message
 #include "serveur.h"      
 #include <signal.h>
 #include "header.h"       
@@ -13,7 +13,7 @@
 static void handleSigint(int sig) {
     (void)sig;  
     printf("\nArrêt serveur\n");
-    close(sockfd); 
+    //close(sockfd); 
     exit(EXIT_SUCCESS);
 }
 

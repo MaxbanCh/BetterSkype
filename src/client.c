@@ -9,12 +9,14 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include "message.h"
+#include "header.h"
+#include "client.h"
 
 
 // ------  Variables globales ------
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
-#define BUFFER_MAX    1024
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
@@ -25,7 +27,6 @@ static void handleSigint(int sig) {
 int createSocket()
 {
     return socket(PF_INET, SOCK_DGRAM, 0);
-
 }
 
 // Gestion du port utilise sur le programme 
@@ -79,35 +80,6 @@ void debugSendMessage(ssize_t snd)
 
     return ;
 }
-
-/*  Fonction de formalisation de message
-    *var ip :       adresse ip de l'expediteur
-    *var dest :     pseudo du destinataire
-    *var msg :      Message a envoyer 
-
-    *return : message formalise ("ip//dest//numero msg//nb total message/#/#00message")
-*/
-char *createMessage(char *ip, char *dest, char *msg)
-{
-    char *message = malloc(1024*sizeof(char));
-    
-    strcpy(message, ip);
-    strcat(message, "//");
-
-    strcat(message, dest);
-    strcat(message, "//");
-
-    strcat(message, "1");
-    strcat(message, "//");
-
-    strcat(message, "1");
-    strcat(message, "/#/#00");
-
-    strcat(message, msg);
-
-    return message;
-}
-
 
 int main(void) {
     signal(SIGINT, handleSigint);
