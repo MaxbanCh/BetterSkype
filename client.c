@@ -1,3 +1,5 @@
+// ------ Importation des Librairies ------
+
 #include <sys/socket.h>
 #include <netinet/in.h> 
 #include <stdio.h>
@@ -8,104 +10,123 @@
 #include <signal.h>
 #include <sys/wait.h>
 
-#define SERVER_IP   "127.0.0.1"
+
+// ------  Variables globales ------
+#define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
 #define BUFFER_MAX    1024
-
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
     exit(EXIT_SUCCESS);
 }
 
-
+// Fonction de creation de la socket UDP
 int createSocket()
 {
-	return socket(PF_INET, SOCK_DGRAM, 0);
+    return socket(PF_INET, SOCK_DGRAM, 0);
 
 }
 
+// Gestion du port utilise sur le programme 
 struct sockaddr_in *adServ(int port)
 {
-	struct sockaddr_in *adServer = malloc(sizeof(struct sockaddr_in));
-	adServer->sin_family = AF_INET; 
-	adServer->sin_port = htons(port);
+    struct sockaddr_in *adServer = malloc(sizeof(struct sockaddr_in));
+    adServer->sin_family = AF_INET; 
+    adServer->sin_port = htons(port);
 
-	return adServer;
+    return adServer;
 }
 
+// Fonction de connexion au serveur
 int connection(int ds, char *ip, struct sockaddr_in *adServ)
 {
-	int res = inet_pton(AF_INET, ip, &(adServ->sin_addr));
-	socklen_t lgA = sizeof(struct sockaddr_in);
+    int res = inet_pton(AF_INET, ip, &(adServ->sin_addr));
+    socklen_t lgA = sizeof(struct sockaddr_in);
 
-	res = connect(ds, (struct sockaddr *) adServ, lgA);
+    res = connect(ds, (struct sockaddr *) adServ, lgA);
 
-	return res;
+    return res;
 }
 
+// Verification de la connexion
 void debugConnexion(int res)
 {
-	if (res == 0)
-		printf("ouais c'est connecte\n");
-	else
-		printf("nope dommage\n");
+    if (res == 0)
+        printf("ouais c'est connecte\n");
+    else
+        printf("nope dommage\n");
 
-	return ;
+    return ;
 }
 
-
+/* Fonction d'envoi d'un message
+ *var dS :          Socket de connexion
+ *var adServer :    Serveur destinataire
+ *var message :     message formalise au prealable
+*/
 ssize_t sendMessage(int dS, struct sockaddr_in *adServer, char *message)
 {
-	socklen_t lgA = sizeof(struct sockaddr_in);
-	return sendto(dS, message, 1024, 0, (struct sockaddr *)adServer, lgA);
+    socklen_t lgA = sizeof(struct sockaddr_in);
+    return sendto(dS, message, 1024, 0, (struct sockaddr *)adServer, lgA);
 }
 
+// Fonction de debug d'envoi d'un message
 void debugSendMessage(ssize_t snd)
 {
-	if (snd == -1)
-		perror("Erreur envoi msg : ");
+    if (snd == -1)
+        perror("Erreur envoi msg : ");
 
-	return ;
+    return ;
 }
 
+/*  Fonction de formalisation de message
+    *var ip :       adresse ip de l'expediteur
+    *var dest :     pseudo du destinataire
+    *var msg :      Message a envoyer 
+
+    *return : message formalise ("ip//dest//numero msg//nb total message/#/#00message")
+*/
 char *createMessage(char *ip, char *dest, char *msg)
 {
-	char *message = malloc(1024*sizeof(char));
-	
-	strcpy(message, ip);
-	strcat(message, "//");
+    char *message = malloc(1024*sizeof(char));
+    
+    strcpy(message, ip);
+    strcat(message, "//");
 
-	strcat(message, dest);
-	strcat(message, "//");
+    strcat(message, dest);
+    strcat(message, "//");
 
-	strcat(message, "1");
-	strcat(message, "//");
+    strcat(message, "1");
+    strcat(message, "//");
 
-	strcat(message, "1");
-	strcat(message, "/#/#00");
+    strcat(message, "1");
+    strcat(message, "/#/#00");
 
-	strcat(message, msg);
+    strcat(message, msg);
 
-	return message;
+    return message;
 }
 
+
 int main(void) {
-	signal(SIGINT, handleSigint);
+    signal(SIGINT, handleSigint);
     int dS = createSocket();
-	if (dS < 0) {
-		perror("socket");
-		exit(EXIT_FAILURE);
-	}
+    if (dS < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);         // Cas d'erreur 
+    }
+
     struct sockaddr_in *adServer = adServ(SERVER_PORT);
 
     if ( connection(dS, SERVER_IP, adServer) != 0 ) {
         debugConnexion(-1);
-        exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);         // Cas d'erreur lors de la connexion
     }
     debugConnexion(0);
 
-    pid_t pid = fork();
+    pid_t pid = fork();             // Creation de processus
+
     if (pid < 0) {
         perror("fork"); 
         exit(EXIT_FAILURE);
