@@ -1,4 +1,5 @@
 // ------ Importation des Librairies ------
+
 #include <sys/socket.h>
 #include <netinet/in.h> 
 #include <stdio.h>
@@ -14,9 +15,6 @@
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
 #define BUFFER_MAX    1024
-
-
-// ------  Fonction de gestions des signaux ------
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
@@ -118,6 +116,7 @@ int main(void) {
         perror("socket");
         exit(EXIT_FAILURE);         // Cas d'erreur 
     }
+
     struct sockaddr_in *adServer = adServ(SERVER_PORT);
 
     if ( connection(dS, SERVER_IP, adServer) != 0 ) {
@@ -127,6 +126,7 @@ int main(void) {
     debugConnexion(0);
 
     pid_t pid = fork();             // Creation de processus
+
     if (pid < 0) {
         perror("fork"); 
         exit(EXIT_FAILURE);
