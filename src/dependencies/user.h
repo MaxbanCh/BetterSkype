@@ -13,16 +13,16 @@ typedef struct {
 int authenticateClient(const char *pseudo, const char *password);
 
 // Associe un pseudo à une adresse IP + port
-int associateUser(const char *pseudo, const struct sockaddr_in *client_addr);
+int associateUser(const char *pseudo, const struct sockaddr_in *client_addr, User *activeUsers, int *numActiveUsers);
 
 // Vérifie si un utilisateur est connecté
-int isUserConnected(const char *pseudo);
+int isUserConnected(const char *pseudo, User *activeUsers, int numActiveUsers);
 
 // Traite la commande @connect
-int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size);
+int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
 
 // Fonction qui enregistre un nouvel utilisateur
 int registerUser(const char *pseudo, const char *password);
 
 // Traite la commande @disconnect
-int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size);
+int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
