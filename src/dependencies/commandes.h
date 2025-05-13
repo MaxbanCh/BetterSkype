@@ -9,10 +9,13 @@
 typedef enum {
     CMD_HELP,       // @help - Affiche la liste des commandes disponibles
     CMD_PING,       // @ping - Le serveur répond "pong"
-    CMD_MSG,        // @msg <user> <msg> - Envoie un message privé à un utilisateur
-    // CMD_CONNECT,    // @connect <login> <password> - Connexion d'un utilisateur
+    CMD_MSG,        // @msg <user> <msg> - Envoie un message privé à un utilisateur 
     CMD_CREDITS,    // @credits - Affiche les crédits de l'application
-    CMD_SHUTDOWN,   // @shutdown - Éteint le serveur (administrateur seulement)
+    CMD_SHUTDOWN,   // @shutdown - Éteint le serveur 
+    CMD_UNKNOWN     // Commande non reconnue
+    //CMD_DELETE
+    //CMD_CONNECT 
+    //CMD_DISCONNET
 } CommandType;
 
 // Structure d'une commande
@@ -24,12 +27,22 @@ typedef struct {
 } Command;
 
 // Structure des arguments d'une commande
-typedef struct {
+/*typedef struct {
     CommandType type;           // Type de la commande identifiée
     int argc;                   // Nombre d'arguments
     char **argv;                // Tableau des arguments
     char *raw_message;          // Message brut original
-} CommandArgs;
+} CommandArgs;*/
+
+// Identifie le type de commande du message 
+CommandType getCommandType(const char *message);
 
 
-#endif 
+// Exécute une commande côté client
+int executeClientCommand(CommandType type, const char *message, int socket);
+
+
+// Exécute une commande côté serveur
+int executeServerCommand(CommandType type, const char *message, int socket, void *client_addr, int is_admin);
+
+#endif // COMMANDES_H
