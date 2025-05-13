@@ -13,4 +13,9 @@
 // Délimiteur entre les champs et le contenu
 #define PAYLOAD_DELIM "/#/#00"
 
+
+#define USERS_FILE "users.csv"
+
+#define MAX_USERS 100
+
 #endif // HEADER_H

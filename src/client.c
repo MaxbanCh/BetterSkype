@@ -17,6 +17,7 @@
 // ------  Variables globales ------
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
+
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
@@ -54,9 +55,9 @@ int connection(int ds, char *ip, struct sockaddr_in *adServ)
 void debugConnexion(int res)
 {
     if (res == 0)
-        printf("ouais c'est connecte\n");
+        printf("BIENVENUE SUR BETTERSKYPE !!!!!!\n");
     else
-        printf("nope dommage\n");
+        printf("Ohhhh nonnnnn, il semble qu'il y'a une erreur\n");
 
     return ;
 }
