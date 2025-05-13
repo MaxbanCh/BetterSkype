@@ -1,5 +1,10 @@
-#include <header.h>
-#include <user.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include "header.h"
+#include "user.h"
 
 
 // Fonction qui vérifie l'authentification d'un client
@@ -139,12 +144,15 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
             } else {
                 snprintf(response, response_size, "Erreur serveur: impossible d'ajouter l'utilisateur à la liste active");
                 return 0;
-            }
-        } else {
+            }        } else {
             snprintf(response, response_size, "Échec de l'enregistrement de l'utilisateur %s", pseudo);
             return 0;
         }
     }
+    
+    // Si on arrive ici, quelque chose d'inattendu s'est produit
+    snprintf(response, response_size, "Erreur inconnue lors de l'authentification");
+    return 0;
 }
 
 // Traite la commande @disconnect

@@ -126,7 +126,6 @@ int main() {
                     sendto(sockfd, response, strlen(response), 0, 
                           (struct sockaddr*)&client, sizeof(client));
                 }
-
             }
             else{
                 // Traitement des messages normaux                // Vérifier si le client est authentifié avant de traiter le message
