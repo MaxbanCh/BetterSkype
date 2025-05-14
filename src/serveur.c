@@ -167,7 +167,8 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
                 }
             }
             
-            
+            /* fall through */
+        
         case FORMAT_MESSAGE:
             if (state == FORMAT_MESSAGE) {
                 // Construire le message à envoyer
