@@ -70,6 +70,137 @@ void sendAcR(int sockfd, const struct sockaddr_in *cli) {
     }
 }
 
+int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client, 
+                  char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+    // Variables pour suivre l'état de la fonction
+    int sender_index = -1;
+    int dest_index = -1;
+    char dest_pseudo[PSEUDO_MAX] = {0};
+    char *msg_start = NULL;
+    char *content_start = NULL;
+    int result = -1;
+    
+    // État de traitement du message
+    enum {
+        CHECK_SENDER,
+        EXTRACT_DESTINATION,
+        EXTRACT_MESSAGE,
+        FIND_DESTINATION,
+        FORMAT_MESSAGE,
+        ERROR_NOT_CONNECTED,
+        ERROR_INVALID_FORMAT,
+        ERROR_MISSING_MESSAGE,
+        ERROR_USER_NOT_FOUND
+    } state = CHECK_SENDER;
+    
+    // Vérifier que l'expéditeur est connecté
+    char sender_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(sender_client->sin_addr), sender_ip, INET_ADDRSTRLEN);
+    int sender_port = ntohs(sender_client->sin_port);
+    
+    // Trouver l'expéditeur
+    int i = 0;
+    while (i < numActiveUsers && sender_index == -1) {
+        if (strcmp(activeUsers[i].ip, sender_ip) == 0 && 
+            activeUsers[i].port == sender_port && 
+            activeUsers[i].isConnected == 1) {
+            sender_index = i;
+        }
+        i++;
+    }
+    
+    // Si l'expéditeur n'est pas trouvé, changer l'état
+    if (sender_index == -1) {
+        state = ERROR_NOT_CONNECTED;
+    }
+    
+    // Machine à états pour traiter le message
+    switch (state) {
+        case CHECK_SENDER:
+            // Expéditeur trouvé, extraire le destinataire
+            msg_start = strchr(payload, ' ');
+            if (msg_start) {
+                msg_start++; // Sauter l'espace
+                state = EXTRACT_DESTINATION;
+            } else {
+                state = ERROR_INVALID_FORMAT;
+            }
+            /* fall through */
+            
+        case EXTRACT_DESTINATION:
+            if (state == EXTRACT_DESTINATION) {
+                if (sscanf(msg_start, "%s", dest_pseudo) == 1) {
+                    state = EXTRACT_MESSAGE;
+                } else {
+                    state = ERROR_INVALID_FORMAT;
+                }
+            }
+            /* fall through */
+            
+        case EXTRACT_MESSAGE:
+            if (state == EXTRACT_MESSAGE) {
+                content_start = strchr(msg_start, ' ');
+                if (content_start) {
+                    content_start++; // Sauter l'espace
+                    state = FIND_DESTINATION;
+                } else {
+                    state = ERROR_MISSING_MESSAGE;
+                }
+            }
+            /* fall through */
+            
+        case FIND_DESTINATION:
+            if (state == FIND_DESTINATION) {
+                i = 0;
+                while (i < numActiveUsers && dest_index == -1) {
+                    if (strcmp(activeUsers[i].pseudo, dest_pseudo) == 0 && 
+                        activeUsers[i].isConnected == 1) {
+                        dest_index = i;
+                    }
+                    i++;
+                }
+                
+                if (dest_index != -1) {
+                    state = FORMAT_MESSAGE;
+                } else {
+                    state = ERROR_USER_NOT_FOUND;
+                }
+            }
+            
+            
+        case FORMAT_MESSAGE:
+            if (state == FORMAT_MESSAGE) {
+                // Construire le message à envoyer
+                snprintf(response, response_size, "Message privé de %s: %s", activeUsers[sender_index].pseudo, content_start);
+            }
+            break;
+            
+        case ERROR_NOT_CONNECTED:
+            snprintf(response, response_size, "Vous devez être connecté pour envoyer un message privé");
+            break;
+            
+        case ERROR_INVALID_FORMAT:
+            snprintf(response, response_size, "Format invalide. Utilisez: @msg <destinataire> <message>");
+            break;
+            
+        case ERROR_MISSING_MESSAGE:
+            snprintf(response, response_size, "Message manquant. Utilisez: @msg <destinataire> <message>");
+            break;
+            
+        case ERROR_USER_NOT_FOUND:
+            snprintf(response, response_size, "Utilisateur %s non connecté ou inexistant", dest_pseudo);
+            break;
+        
+        default:
+            snprintf(response, response_size, "Erreur inconnue");
+            break;
+    }
+    
+    if (state == FORMAT_MESSAGE) {
+        result = dest_index;
+    }
+    return result;
+}
 
 int main() {
     
@@ -127,6 +258,51 @@ int main() {
                           (struct sockaddr*)&client, sizeof(client));
                 }
             }
+            else if (strncmp(msg.payload, "@msg", 4) == 0) {
+                char response[BUFFER_MAX];
+                
+                // Traiter la commande @msg
+                int dest_index = sendPrivateMsg(msg.payload, &client, response, sizeof(response), activeUsers, numActiveUsers);
+                
+                if (dest_index >= 0) {
+                    // Configurer l'adresse du destinataire
+                    struct sockaddr_in dest_addr;
+                    dest_addr.sin_family = AF_INET;
+                    inet_pton(AF_INET, activeUsers[dest_index].ip, &dest_addr.sin_addr);
+                    dest_addr.sin_port = htons(activeUsers[dest_index].port);
+                    
+                    // Envoyer le message au destinataire
+                    sendto(sockfd, response, strlen(response), 0, 
+                        (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+                    
+                    // Envoyer confirmation à l'expéditeur
+                    char confirm[BUFFER_MAX];
+                    snprintf(confirm, sizeof(confirm), "Message envoyé à %s", activeUsers[dest_index].pseudo);
+                    sendto(sockfd, confirm, strlen(confirm), 0, 
+                        (struct sockaddr*)&client, sizeof(client));
+                    
+                    printf("Message privé envoyé à %s\n", activeUsers[dest_index].pseudo);
+                } else {
+                    // Échec de l'envoi (utilisateur non connecté ou message mal formaté)
+                    sendto(sockfd, response, strlen(response), 0, 
+                        (struct sockaddr*)&client, sizeof(client));
+                }
+            } 
+            else if (strncmp(msg.payload, "@register", 9) == 0) {
+                char response[BUFFER_MAX];
+                
+                // Traiter la commande d'enregistrement
+                if (registerUser(msg.payload, &client, response, sizeof(response), activeUsers, &numActiveUsers)) {
+                    // Enregistrement réussi
+                    sendto(sockfd, response, strlen(response), 0, 
+                          (struct sockaddr*)&client, sizeof(client));
+                    printf("Utilisateur enregistré: %s\n", response);
+                } else {
+                    // Enregistrement échoué
+                    sendto(sockfd, response, strlen(response), 0, 
+                          (struct sockaddr*)&client, sizeof(client));
+                }
+}
             else{
                 // Traitement des messages normaux                // Vérifier si le client est authentifié avant de traiter le message
                 int authenticated = 0;

@@ -22,7 +22,10 @@ int isUserConnected(const char *pseudo, User *activeUsers, int numActiveUsers);
 int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
 
 // Fonction qui enregistre un nouvel utilisateur
-int registerUser(const char *pseudo, const char *password);
+int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
 
 // Traite la commande @disconnect
 int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
+
+// Traite la commande @msg pour envoyer un message privé
+int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);

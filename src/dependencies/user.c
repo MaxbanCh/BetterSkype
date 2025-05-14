@@ -39,10 +39,21 @@ int authenticateClient(const char *pseudo, const char *password) {
 }
 
 // Fonction d'enregistrement d'un nouvel utilisateur
-int registerUser(const char *pseudo, const char *password) {
+int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
+    char pseudo[PSEUDO_MAX];
+    char password[64];
+    
+    // Extraire le pseudo et le mot de passe du payload
+    // Format: "@register pseudo password"
+    if (sscanf(payload, "@register %s %s", pseudo, password) != 2) {
+        snprintf(response, response_size, "Format invalide. Utilisez: @register <pseudo> <password>");
+        return 0;
+    }
+    
     // Vérifier si l'utilisateur existe déjà
     int auth_result = authenticateClient(pseudo, "");
     if (auth_result == 1 || auth_result == -1) {
+        snprintf(response, response_size, "Le pseudo %s est déjà utilisé", pseudo);
         return 0; // L'utilisateur existe déjà
     }
 
@@ -52,14 +63,23 @@ int registerUser(const char *pseudo, const char *password) {
         file = fopen(USERS_FILE, "w"); // Créer s'il n'existe pas
         if (!file) {
             perror("Impossible de créer le fichier utilisateurs");
-            return -1;
+            snprintf(response, response_size, "Erreur serveur lors de la création du fichier utilisateurs");
+            return 0;
         }
     }
 
     // Dans une implémentation réelle, on hasherait le mot de passe ici
     fprintf(file, "%s,%s\n", pseudo, password);
     fclose(file);
-    return 1; // Enregistrement réussi
+    
+    // Associer l'utilisateur à son adresse IP et port
+    if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
+        snprintf(response, response_size, "Utilisateur %s enregistré et connecté avec succès", pseudo);
+        return 1;
+    } else {
+        snprintf(response, response_size, "Utilisateur %s enregistré mais erreur lors de la connexion", pseudo);
+        return 0;
+    }
 }
 
 // Vérifie si un utilisateur est déjà connecté
@@ -134,18 +154,17 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
     } else if (auth_result == -1) {
         // Mot de passe incorrect
         snprintf(response, response_size, "Mot de passe invalide pour l'utilisateur %s", pseudo);
-        return 0;
-    } else {        // L'utilisateur n'existe pas, essayer de l'enregistrer
-        if (registerUser(pseudo, password)) {
-            // Enregistrement réussi
-            if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
-                snprintf(response, response_size, "Enregistré et connecté en tant que %s", pseudo);
-                return 1;
-            } else {
-                snprintf(response, response_size, "Erreur serveur: impossible d'ajouter l'utilisateur à la liste active");
-                return 0;
-            }        } else {
-            snprintf(response, response_size, "Échec de l'enregistrement de l'utilisateur %s", pseudo);
+        return 0;    } else {        
+        // L'utilisateur n'existe pas, l'enregistrer directement
+        // Créer un payload pour l'enregistrement
+        char register_payload[BUFFER_MAX];
+        snprintf(register_payload, sizeof(register_payload), "@register %s %s", pseudo, password);
+        
+        // Utiliser la nouvelle version de registerUser
+        if (registerUser(register_payload, client, response, response_size, activeUsers, numActiveUsers)) {
+            return 1; // L'utilisateur est déjà enregistré et connecté par registerUser
+        } else {
+            // registerUser a déjà défini la réponse
             return 0;
         }
     }
