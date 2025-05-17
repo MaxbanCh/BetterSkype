@@ -1,7 +1,12 @@
 #ifndef COMMAND_H
 #define COMMAND_H
 #include <user.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
+#endif
 #include <stddef.h>
 #include <header.h>
 

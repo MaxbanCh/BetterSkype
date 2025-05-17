@@ -130,7 +130,17 @@ int main(void) {
             line[n] = '\0';
 
             // construction et envoi du message structuré
-            char *message = createMessage(SERVER_IP, "destPseudo", line);
+            char *message;
+            char dest[PSEUDO_MAX];
+            memset(dest, 0, sizeof dest);
+            // Si la commande commence par "@msg", on récupère le destinataire
+            if (sscanf(line, "@msg %s", dest) == 1) {
+                // dest contient le pseudo cible
+                message = createMessage(SERVER_IP, dest, line);
+            } else {
+                // pour les autres commandes (broadcast ou authentification), on peut laisser dest vide
+                message = createMessage(SERVER_IP, "", line);
+            }
             ssize_t s = sendMessage(dS, adServer, message);
             debugSendMessage(s);
             free(message);

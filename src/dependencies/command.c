@@ -2,6 +2,13 @@
 #include "command.h"
 #include <stdio.h>
 #include <header.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+#else
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+#endif
 
 
 
@@ -167,9 +174,9 @@ int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *r
 int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client, 
                   char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
     // Variables pour suivre l'état de la fonction
-    int sender_index = -1;
+    int senderIndex = -1;
     int dest_index = -1;
-    char dest_pseudo[PSEUDO_MAX] = {0};
+    char destPseudo[PSEUDO_MAX] = {0};
     char *msgStart = NULL;
     char *content_start = NULL;
     int result = -1;
@@ -181,7 +188,7 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
         EXTRACT_MESSAGE,
         FIND_DESTINATION,
         FORMAT_MESSAGE,
-        ERROR_NOT_CONNECTED,
+        MSG_ERROR_NOT_CONNECTED,
         ERROR_INVALID_FORMAT,
         ERROR_MISSING_MESSAGE,
         ERROR_USER_NOT_FOUND
@@ -194,18 +201,18 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
     
     // Trouver l'expéditeur
     int i = 0;
-    while (i < numActiveUsers && sender_index == -1) {
+    while (i < numActiveUsers && senderIndex == -1) {
         if (strcmp(activeUsers[i].ip, sender_ip) == 0 && 
             activeUsers[i].port == sender_port && 
             activeUsers[i].isConnected == 1) {
-            sender_index = i;
+            senderIndex = i;
         }
         i++;
     }
     
     // Si l'expéditeur n'est pas trouvé, changer l'état
-    if (sender_index == -1) {
-        state = ERROR_NOT_CONNECTED;
+    if (senderIndex == -1) {
+        state = MSG_ERROR_NOT_CONNECTED;
     }
     
     // Machine à états pour traiter le message
@@ -223,7 +230,7 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
             
         case EXTRACT_DESTINATION:
             if (state == EXTRACT_DESTINATION) {
-                if (sscanf(msgStart, "%s", dest_pseudo) == 1) {
+                if (sscanf(msgStart, "%s", destPseudo) == 1) {
                     state = EXTRACT_MESSAGE;
                 } else {
                     state = ERROR_INVALID_FORMAT;
@@ -247,7 +254,7 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
             if (state == FIND_DESTINATION) {
                 i = 0;
                 while (i < numActiveUsers && dest_index == -1) {
-                    if (strcmp(activeUsers[i].pseudo, dest_pseudo) == 0 && 
+                    if (strcmp(activeUsers[i].pseudo, destPseudo) == 0 && 
                         activeUsers[i].isConnected == 1) {
                         dest_index = i;
                     }
@@ -266,12 +273,12 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
         case FORMAT_MESSAGE:
             if (state == FORMAT_MESSAGE) {
                 // Construire le message à envoyer
-                snprintf(response, response_size, "Message privé de %s: %s", activeUsers[sender_index].pseudo, content_start);
+                snprintf(response, response_size, "Message privé de %s: %s", activeUsers[senderIndex].pseudo, content_start);
                 break;
             }
-           
+            /* fall through */
             
-        case ERROR_NOT_CONNECTED:
+        case MSG_ERROR_NOT_CONNECTED:
             snprintf(response, response_size, "Vous devez être connecté pour envoyer un message privé");
             break;
             
@@ -284,7 +291,7 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client,
             break;
             
         case ERROR_USER_NOT_FOUND:
-            snprintf(response, response_size, "Utilisateur %s non connecté ou inexistant", dest_pseudo);
+            snprintf(response, response_size, "Utilisateur %s non connecté ou inexistant", destPseudo);
             break;
         
         default:
