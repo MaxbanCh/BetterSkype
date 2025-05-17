@@ -1,9 +1,4 @@
-===============================
-    BETTERSKYPE - HELP
-===============================
-
-INTRODUCTION
------------
+INTRODUCTION : 
 BetterSkype est une application de messagerie instantanée permettant 
 d'échanger des messages et des fichiers entre utilisateurs.
 
@@ -18,7 +13,6 @@ COMMANDES DISPONIBLES
 
 @register <pseudo> <password>
     Créer un nouveau compte utilisateur.
-    Exemple: @register bob secret456
 
 @msg <destinataire> <message>
     Envoyer un message privé à un utilisateur connecté.

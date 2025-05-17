@@ -18,9 +18,12 @@
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
 
+int clientRunning = 1; 
+
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
+    clientRunning = 0;
     exit(EXIT_SUCCESS);
 }
 
@@ -83,7 +86,7 @@ void debugSendMessage(ssize_t snd)
 }
 
 int main(void) {
-    signal(SIGINT, handleSigint);
+    
     int dS = createSocket();
     if (dS < 0) {
         perror("socket");
@@ -106,9 +109,10 @@ int main(void) {
     }
 
     if (pid == 0) {
+        signal(SIGINT, handleSigint);
         // ── Processus enfant : réception bloquante des ACKs ──
         char buf[BUFFER_MAX];
-        while (1) {
+        while (clientRunning) {
             ssize_t r = recvfrom(dS, buf, BUFFER_MAX-1, 0, NULL, NULL);
             if (r < 0) {
                 perror("recvfrom"); 
@@ -145,7 +149,6 @@ int main(void) {
             debugSendMessage(s);
             free(message);
 
-            write(STDOUT_FILENO, "> ", 2);
         }
 
         kill(pid, SIGTERM);
