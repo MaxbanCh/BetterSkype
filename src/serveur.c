@@ -21,13 +21,17 @@
 
 
 int serverRunning = 1;
+int sockfd; // // Socket globale pour pouvoir la fermer avec ctrl+c
 
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
 static void handleSigint(int sig) {
     (void)sig;  
     printf("\nArrêt serveur\n");
+
+    close(sockfd);
     serverRunning = 0;
-    //close(sockfd); 
+    printf("Serveur arrêté.\n");
+    exit(EXIT_SUCCESS);
 }
 
 // Fonction qui initialise la socket UDP et effectue le bind
@@ -79,7 +83,8 @@ void sendAcR(int sockfd, const struct sockaddr_in *cli) {
 }
 
 int main(void) {
-    signal(SIGINT, handleSigint);
+    signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
+    signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
     int  sockfd         = initSocket();
     User activeUsers[MAX_USERS];
     int  numActiveUsers = 0;
@@ -291,12 +296,21 @@ int main(void) {
                     };
                     inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
                     
-                    const char *shutdownMsg = "Le serveur va s'arrêter....";
-                    sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 
-                        (struct sockaddr*)&dest, sizeof(dest));
+                    
+                   const char *shutdownMsg = "Le serveur va s'arrêter. Veuillez redémarrer votre client plus tard.\n";
+                    
+                    // Envoi avec vérification
+                    if (sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 
+                            (struct sockaddr*)&dest, sizeof(dest)) < 0) {
+                        printf("Erreur lors de l'envoi du message d'arrêt à %s\n", activeUsers[i].pseudo);
+                    } else {
+                        printf("Message d'arrêt envoyé à %s\n", activeUsers[i].pseudo);
+                    }
+                    
+                    
                 }
             }
-            
+        
             // Fermer proprement le socket et arrêter le serveur
             close(sockfd);
             raise(SIGINT); // Appeler le handler de signal pour arrêter le serveur
