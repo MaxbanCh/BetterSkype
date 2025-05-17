@@ -52,6 +52,39 @@ CommandType getCommandType(const char *payload)
 }
 
 
+int pingCmd(const char *payload, const struct sockaddr_in *client, 
+           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+    
+    // Get client information
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    // Check if user is connected
+    int isConnected = 0;
+    char userName[PSEUDO_MAX] = "Anonyme";
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    // Format a personalized response
+    if (isConnected) {
+        snprintf(response, response_size, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
+    } else {
+        snprintf(response, response_size, "Pong! Serveur en ligne. Vous n'êtes pas connecté.");
+    }
+    
+    return 1; // Success - ping response created successfully
+}
+
 // Fonction d'enregistrement d'un nouvel utilisateur
 int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
     char pseudo[PSEUDO_MAX];
@@ -311,5 +344,97 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *senderClient,
     } else {
         result = -1;
     }
+    return result;
+}
+
+int helpCmd(const char *payload, const struct sockaddr_in *client, 
+           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+    
+    // Ouvrir le fichier README.txt
+    FILE *helpFile = fopen("README.txt", "r");
+    
+    // En cas d'erreur, afficher un message simple
+    if (!helpFile) {
+        snprintf(response, response_size, "Erreur: impossible d'ouvrir le fichier d'aide.");
+    } else {
+        // Lire le contenu du fichier
+        size_t rd = 0;
+        size_t maxSize = response_size - 1; // Garder un octet pour le caractère nul
+        
+        rd = fread(response, 1, maxSize, helpFile);
+        fclose(helpFile);
+        
+        // S'assurer que la chaîne se termine correctement
+        if (rd >= 0 && rd < response_size) {
+            response[rd] = '\0';
+        } else {
+            response[response_size - 1] = '\0';
+        }
+    }
+    
+    return 1; // Toujours retourner succès
+}
+
+int creditsCmd(const char *payload, const struct sockaddr_in *client, 
+           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+    
+    // Ouvrir le fichier Credits.txt
+    FILE *creditsFile = fopen("Credits.txt", "r");
+    
+    // En cas d'erreur, afficher un message simple
+    if (!creditsFile) {
+        snprintf(response, response_size, "Erreur: impossible d'ouvrir le fichier de crédits.");
+    } else {
+        // Lire le contenu du fichier
+        size_t rd = 0;
+        size_t maxSize = response_size - 1; // Garder un octet pour le caractère nul
+        
+        rd = fread(response, 1, maxSize, creditsFile);
+        fclose(creditsFile);
+        
+        // S'assurer que la chaîne se termine correctement
+        if (rd >= 0 && rd < response_size) {
+            response[rd] = '\0';
+        } else {
+            response[response_size - 1] = '\0';
+        }
+    }
+    
+    return 1; 
+}
+
+int shutdownCmd(const char *payload, const struct sockaddr_in *client, 
+           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+    
+    int result = 0;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    int isConnected = 0;
+    int isAdmin = 0;
+    char userName[PSEUDO_MAX] = "Anonyme";
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            isAdmin = activeUsers[i].isAdmin;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    if (!isConnected) {
+        snprintf(response, response_size, "Vous devez être connecté pour arrêter le serveur.");
+    } else if (!isAdmin) {
+        snprintf(response, response_size, "Vous n'avez pas les droits administrateur pour arrêter le serveur.");
+    } else {
+        snprintf(response, response_size, "Arrêt du serveur demandé par %s (admin). Le serveur va s'éteindre...", userName);
+        result = 2;
+    }
+    
     return result;
 }

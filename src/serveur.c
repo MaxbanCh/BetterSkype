@@ -2,7 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+#ifdef _WIN32 
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 #include "message.h"  // structure contenant les champs du message
 #include "serveur.h"      
 #include <signal.h>
@@ -19,7 +28,6 @@ static void handleSigint(int sig) {
     printf("\nArrêt serveur\n");
     serverRunning = 0;
     //close(sockfd); 
-    exit(EXIT_SUCCESS);
 }
 
 // Fonction qui initialise la socket UDP et effectue le bind
@@ -176,36 +184,46 @@ int main(void) {
                 // on a tout envoyé pour @msg, donc on passe au prochain tour
                 continue;
             }
-            /*
+            
             // @help, @ping, @credits, @shutdown, @upload, @download
             case cmdHelp:
-                status = helpCmd(msg.payload,
-                                 &client,
-                                 response,
-                                 sizeof(response));
+                status = helpCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);
                 break;
 
             case cmdPing:
-                status = pingCmd(msg.payload,
-                                 &client,
-                                 response,
-                                 sizeof(response));
+                status = pingCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);;
                 break;
-
+            
             case cmdCredits:
                 status = creditsCmd(msg.payload,
                                     &client,
                                     response,
-                                    sizeof(response));
+                                    sizeof(response),
+                                    activeUsers,
+                                    numActiveUsers);
+
                 break;
 
             case cmdShutdown:
                 status = shutdownCmd(msg.payload,
-                                     &client,
-                                     response,
-                                     sizeof(response));
-                break;
+                                    &client,
+                                    response,
+                                    sizeof(response),
+                                    activeUsers,
+                                    numActiveUsers);
 
+                break;
+            /*
             case cmdUpload:
                 status = uploadCmd(msg.payload,
                                    &client,
@@ -258,6 +276,31 @@ int main(void) {
                    0,
                    (struct sockaddr*)&client,
                    sizeof(client));
+        }
+
+        // Vérifier si c'est une commande d'arrêt
+        if (status == 2) {
+            printf("Commande d'arrêt reçue d'un administrateur. Arrêt du serveur...\n");
+            
+            // Notifier tous les utilisateurs connectés
+            for (int i = 0; i < numActiveUsers; i++) {
+                if (activeUsers[i].isConnected) {
+                    struct sockaddr_in dest = {
+                        .sin_family = AF_INET,
+                        .sin_port = htons(activeUsers[i].port)
+                    };
+                    inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
+                    
+                    const char *shutdownMsg = "Le serveur va s'arrêter....";
+                    sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 
+                        (struct sockaddr*)&dest, sizeof(dest));
+                }
+            }
+            
+            // Fermer proprement le socket et arrêter le serveur
+            close(sockfd);
+            raise(SIGINT); // Appeler le handler de signal pour arrêter le serveur
+            printf("Serveur arrêté.\n");
         }
     }
 

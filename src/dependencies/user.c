@@ -51,32 +51,68 @@ int isUserConnected(const char *pseudo, User *activeUsers, int numActiveUsers) {
 }
 
 // Associe un utilisateur à une adresse IP et port
-int associateUser(const char *pseudo, const struct sockaddr_in *client_addr, User *activeUsers, int *numActiveUsers) {
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(client_addr->sin_addr), ip, INET_ADDRSTRLEN);
-    int port = ntohs(client_addr->sin_port);
+int associateUser(const char *pseudo, const struct sockaddr_in *client, User *activeUsers, int *numActiveUsers) {
+    // Récupération de l'IP et du port du client
+    char clientIp[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), clientIp, INET_ADDRSTRLEN);
+    int clientPort = ntohs(client->sin_port);
     
-    // Vérifier si l'utilisateur est déjà dans la liste
-    for (int i = 0; i < *numActiveUsers; i++) {
+    // Recherche si l'utilisateur existe déjà ou trouver un emplacement libre
+    int index = -1;
+    int existingUserIndex = -1;
+    int freeIndex = -1;
+    int i = 0;
+    
+    while (i < MAX_USERS) {
+        // Si on trouve l'utilisateur avec le même pseudo
         if (strcmp(activeUsers[i].pseudo, pseudo) == 0) {
-            // Mettre à jour l'utilisateur existant
-            strcpy(activeUsers[i].ip, ip);
-            activeUsers[i].port = port;
-            activeUsers[i].isConnected = 1;
-            return 1;
+            existingUserIndex = i;
         }
+        // Si on trouve un emplacement libre
+        if (activeUsers[i].pseudo[0] == '\0' && freeIndex == -1) {
+            freeIndex = i;
+        }
+        i++;
     }
     
-    // Ajouter un nouvel utilisateur actif
-    if (*numActiveUsers >= MAX_USERS) {
-        return 0; // Liste pleine
+    // On privilégie l'utilisateur existant, sinon on prend un emplacement libre
+    if (existingUserIndex != -1) {
+        index = existingUserIndex;
+    } else if (freeIndex != -1) {
+        index = freeIndex;
+        (*numActiveUsers)++;
     }
     
-    strcpy(activeUsers[*numActiveUsers].pseudo, pseudo);
-    strcpy(activeUsers[*numActiveUsers].ip, ip);
-    activeUsers[*numActiveUsers].port = port;
-    activeUsers[*numActiveUsers].isConnected = 1;
-    (*numActiveUsers)++;
-    return 1;
+    // Si on a trouvé un index valide, on met à jour les données
+    if (index != -1) {
+        strncpy(activeUsers[index].pseudo, pseudo, PSEUDO_MAX - 1);
+        strncpy(activeUsers[index].ip, clientIp, INET_ADDRSTRLEN - 1);
+        activeUsers[index].port = clientPort;
+        activeUsers[index].isConnected = 1;
+        
+        // Vérifier si c'est le premier utilisateur connecté
+        int anyOtherConnected = 0;
+        i = 0;
+        
+        while (i < MAX_USERS) {
+            if (i != index && activeUsers[i].isConnected == 1) {
+                anyOtherConnected = 1;
+            }
+            i++;
+        }
+        
+        // Si aucun autre utilisateur n'est connecté, c'est l'administrateur
+        if (anyOtherConnected == 0) {
+            activeUsers[index].isAdmin = 1;
+        } else {
+            activeUsers[index].isAdmin = 0;
+        }
+        }
+    
+    int result = 0;
+    if (index != -1) {
+        result = 1;
+    }
+    
+    return result;
 }
-

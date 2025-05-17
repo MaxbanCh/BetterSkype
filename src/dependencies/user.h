@@ -16,6 +16,7 @@ typedef struct {
     char ip[INET_ADDRSTRLEN]; // Adresse IP de l'utilisateur
     int port; // Port de l'utilisateur
     int isConnected; 
+    int isAdmin; // Indique si l'utilisateur est administrateur
 } User;
 
 // Vérifie l'authentification d'un client
