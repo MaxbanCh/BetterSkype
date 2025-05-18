@@ -12,6 +12,7 @@
 #include "message.h"
 #include "header.h"
 #include "client.h"
+#include "dependencies/TCPFile.h"  // Ajout de l'inclusion
 
 
 // ------  Variables globales ------
@@ -81,6 +82,75 @@ void debugSendMessage(ssize_t snd)
     return ;
 }
 
+// Fonction qui gère les transferts de fichiers via TCP
+void handleTCPFileTransfer(char *buffer) {
+    // Format attendu: "TCP:<operation>:<fichier>:<ip_serveur>"
+    // où operation est soit "SEND" soit "RECEIVE"
+    
+    char *operation, *filename, *serverIP;
+    
+    // Extraire les informations du message
+    operation = strtok(buffer + 4, ":");  // +4 pour sauter "TCP:"
+    if (!operation) {
+        write(STDOUT_FILENO, "\nFormat TCP invalide\n> ", 24);
+        return;
+    }
+    
+    filename = strtok(NULL, ":");
+    if (!filename) {
+        write(STDOUT_FILENO, "\nNom de fichier manquant\n> ", 28);
+        return;
+    }
+    
+    serverIP = strtok(NULL, ":");
+    if (!serverIP) {
+        // Si l'IP n'est pas spécifiée, utiliser celle par défaut
+        serverIP = SERVER_IP;
+    }
+    
+    write(STDOUT_FILENO, "\nInitialisation transfert TCP...\n", 33);
+    
+    // Initialiser la connexion TCP
+    int socketTCP = initTCPSocketClient(serverIP);
+    if (socketTCP < 0) {
+        write(STDOUT_FILENO, "\nÉchec connexion TCP\n> ", 25);
+        return;
+    }
+    
+    int result;
+    if (strcmp(operation, "UPLOAD") == 0) {
+        // Envoyer le fichier
+        write(STDOUT_FILENO, "\nEnvoi du fichier en cours...\n", 30);
+        result = sendFile(socketTCP, filename);
+        if (result == 0) {
+            write(STDOUT_FILENO, "\nFichier envoyé avec succès\n> ", 31);
+        } else {
+            char error[50];
+            sprintf(error, "\nErreur lors de l'envoi du fichier (code %d)\n> ", result);
+            write(STDOUT_FILENO, error, strlen(error));
+        }
+    } 
+    else if (strcmp(operation, "DOWNLOAD") == 0) {
+        // Recevoir le fichier
+        write(STDOUT_FILENO, "\nRéception du fichier en cours...\n", 34);
+        result = receiveFile(socketTCP, filename);
+        if (result == 0) {
+            write(STDOUT_FILENO, "\nFichier reçu avec succès\n> ", 30);
+        } else {
+            char error[60];
+            sprintf(error, "\nErreur lors de la réception du fichier (code %d)\n> ", result);
+            write(STDOUT_FILENO, error, strlen(error));
+        }
+    }
+    else {
+        write(STDOUT_FILENO, "\nOpération TCP non reconnue\n> ", 31);
+    }
+    
+    // Fermer la connexion TCP
+    closeClient(socketTCP);
+}
+
+
 int main(void) {
     signal(SIGINT, handleSigint);
     int dS = createSocket();
@@ -114,9 +184,20 @@ int main(void) {
                 _exit(EXIT_FAILURE);
             }
             buf[r] = '\0';
-            write(STDOUT_FILENO, "\n ", 3);
-            write(STDOUT_FILENO, buf, r);
-            write(STDOUT_FILENO, "\n> ", 3);
+
+            // Gestion accusé de réception
+            if (strcmp(buf, "OK") == 0) {
+                write(STDOUT_FILENO, "\nACK reçu\n> ", 12);
+            } 
+            else if (strncmp(buf, "TCP", 3) == 0) {
+                handleTCPFileTransfer(buf);
+            }
+            else {
+                write(STDOUT_FILENO, "\n", 1);
+                write(STDOUT_FILENO, buf, r);
+                write(STDOUT_FILENO, "\n> ", 3);
+            }
+
         }
     } else {
         // ── Processus parent : envoi bloquant via read() ──

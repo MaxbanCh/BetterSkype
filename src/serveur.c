@@ -6,7 +6,8 @@
 #include "message.h"  // structure contenant les champs du message
 #include "serveur.h"      
 #include <signal.h>
-#include "header.h"       
+#include "header.h"  
+#include "dependencies/TCPFile.h"       
 
 
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
@@ -104,13 +105,103 @@ void printMessage(const MessageInfo *m) {
 
 // Fonction qui envoie un accusé de réception à l’expéditeur du message
 void sendAcR(int sockfd, const struct sockaddr_in *cli) {
-    const char *acR = "reçu accusé de réception\n"; 
+    const char *acR = "OK"; 
     socklen_t len = sizeof(*cli);
     if (sendto(sockfd, acR, strlen(acR), 0, (const struct sockaddr*)cli, len) < 0) {
         perror("sendto"); 
     }
 }
 
+void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr_in *client) {
+    // Format attendu: "@upload:<fichier>" ou "@download:<fichier>"
+    printf("Traitement du transfert de fichier...\n");
+    
+    char command[BUFFER_MAX];
+    strncpy(command, msg->payload, sizeof(command) - 1);
+    
+    char *operation, *filename;
+    
+    // Extraire les informations du message
+    operation = strtok(command, " ");
+    if (!operation) {
+        printf("Format de commande invalide\n");
+        return;
+    }
+    
+    filename = strtok(NULL, " ");
+    if (!filename) {
+        printf("Nom de fichier manquant\n");
+        return;
+    }
+    
+    printf("Initialisation transfert de fichier avec %s...\n", inet_ntoa(client->sin_addr));
+    
+    // Déterminer l'opération complémentaire à envoyer au client
+    char clientOperation[10];
+    if (strcmp(operation, "@upload") == 0) {
+        // Le client veut uploader, le serveur va recevoir
+        strcpy(clientOperation, "UPLOAD");
+    } else if (strcmp(operation, "@download") == 0) {
+        // Le client veut télécharger, le serveur va envoyer
+        strcpy(clientOperation, "DOWNLOAD");
+    } else {
+        printf("Opération non reconnue: %s\n", operation);
+        return;
+    }
+    
+    // Envoi d'une commande TCP au client pour l'informer qu'une connexion TCP va être établie
+    char tcpResponse[BUFFER_MAX];
+    snprintf(tcpResponse, sizeof(tcpResponse), "TCP:%s:%s:%s", clientOperation, 
+             filename, inet_ntoa(client->sin_addr));
+    
+    socklen_t len = sizeof(*client);
+    if (sendto(sockfd, tcpResponse, strlen(tcpResponse), 0, (const struct sockaddr*)client, len) < 0) {
+        perror("Erreur envoi commande TCP");
+        return;
+    }
+    
+    printf("Commande TCP envoyée: %s\n", tcpResponse);
+    
+    // Initialiser le mode serveur TCP et attendre une connexion
+    printf("Démarrage du serveur TCP...\n");
+    int socketTCP = initTCPSocketServer();
+    if (socketTCP < 0) {
+        printf("Échec initialisation serveur TCP\n");
+        return;
+    }
+    
+    printf("En attente d'une connexion TCP...\n");
+    int clientTCP = connexionTCP(socketTCP);
+    if (clientTCP < 0)  {
+        printf("Échec connexion TCP avec le client\n");
+        closeServer(socketTCP, clientTCP); // Pass the appropriate second argument based on the function definition
+        return;
+    }
+    
+    int result;
+    if (strcmp(operation, "@upload") == 0) {
+        // Client upload = serveur reçoit
+        printf("Réception du fichier %s en cours...\n", filename);
+        result = receiveFile(clientTCP, filename);
+        if (result == 0) {
+            printf("Fichier reçu avec succès\n");
+        } else {
+            printf("Erreur lors de la réception du fichier (code %d)\n", result);
+        }
+    } else if (strcmp(operation, "@download") == 0) {
+        // Client download = serveur envoie
+        printf("Envoi du fichier %s en cours...\n", filename);
+        result = sendFile(clientTCP, filename);
+        if (result == 0) {
+            printf("Fichier envoyé avec succès\n");
+        } else {
+            printf("Erreur lors de l'envoi du fichier (code %d)\n", result);
+        }
+    }
+    
+    // Fermer les connexions TCP
+    closeServer(socketTCP, clientTCP);
+}
 
 int main() {
     
@@ -139,6 +230,14 @@ int main() {
         } else {
             
             fprintf(stderr, "[WARN] parsing failed: %s\n", buffer);
+        }
+
+        if (strncmp(msg.payload, "@upload", 7) == 0 || strncmp(msg.payload, "@download", 9) == 0) {
+            // Si le message commence par @upload ou @download, traiter le transfert de fichier
+            handleFileTransfer(&msg, sockfd, &client);
+        } else {
+            // Sinon, traiter le message comme un message normal
+            printf("Message reçu : %s\n", buffer);
         }
 
         // envoi d’un accusé de réception au client qui a envoyé le message
