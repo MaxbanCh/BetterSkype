@@ -18,9 +18,13 @@
 // ------  Variables globales ------
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
+
+int clientRunning = 1; 
+
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
+    clientRunning = 0;
     exit(EXIT_SUCCESS);
 }
 
@@ -55,9 +59,9 @@ int connection(int ds, char *ip, struct sockaddr_in *adServ)
 void debugConnexion(int res)
 {
     if (res == 0)
-        printf("ouais c'est connecte\n");
+        printf("BIENVENUE SUR BETTERSKYPE !!!!!!\n");
     else
-        printf("nope dommage\n");
+        printf("Ohhhh nonnnnn, il semble qu'il y'a une erreur\n");
 
     return ;
 }
@@ -152,7 +156,7 @@ void handleTCPFileTransfer(char *buffer) {
 
 
 int main(void) {
-    signal(SIGINT, handleSigint);
+    
     int dS = createSocket();
     if (dS < 0) {
         perror("socket");
@@ -175,9 +179,10 @@ int main(void) {
     }
 
     if (pid == 0) {
+        signal(SIGINT, handleSigint);
         // ── Processus enfant : réception bloquante des ACKs ──
         char buf[BUFFER_MAX];
-        while (1) {
+        while (clientRunning) {
             ssize_t r = recvfrom(dS, buf, BUFFER_MAX-1, 0, NULL, NULL);
             if (r < 0) {
                 perror("recvfrom"); 
@@ -210,12 +215,21 @@ int main(void) {
             line[n] = '\0';
 
             // construction et envoi du message structuré
-            char *message = createMessage(SERVER_IP, "destPseudo", line);
+            char *message;
+            char dest[PSEUDO_MAX];
+            memset(dest, 0, sizeof dest);
+            // Si la commande commence par "@msg", on récupère le destinataire
+            if (sscanf(line, "@msg %s", dest) == 1) {
+                // dest contient le pseudo cible
+                message = createMessage(SERVER_IP, dest, line);
+            } else {
+                // pour les autres commandes (broadcast ou authentification), on peut laisser dest vide
+                message = createMessage(SERVER_IP, "", line);
+            }
             ssize_t s = sendMessage(dS, adServer, message);
             debugSendMessage(s);
             free(message);
 
-            write(STDOUT_FILENO, "> ", 2);
         }
 
         kill(pid, SIGTERM);

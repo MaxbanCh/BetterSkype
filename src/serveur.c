@@ -2,19 +2,36 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+#ifdef _WIN32 
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 #include "message.h"  // structure contenant les champs du message
 #include "serveur.h"      
 #include <signal.h>
 #include "header.h"  
+#include "user.h"
+#include "command.h"
 #include "dependencies/TCPFile.h"       
 
+
+int serverRunning = 1;
+int sockfd; // // Socket globale pour pouvoir la fermer avec ctrl+c
 
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
 static void handleSigint(int sig) {
     (void)sig;  
     printf("\nArrêt serveur\n");
-    //close(sockfd); 
+
+    close(sockfd);
+    serverRunning = 0;
+    printf("Serveur arrêté.\n");
     exit(EXIT_SUCCESS);
 }
 
@@ -49,52 +66,6 @@ ssize_t recvMessage(int sockfd, char *buffer, size_t buflen, struct sockaddr_in 
     buffer[r] = '\0'; 
     return r;         
 }
-
-// Fonction qui parse le buffer en 5 parties : ip, pseudo, num, total, payload
-int parseMessage(const char *buffer, MessageInfo *msg) {
-    const char *p = buffer, *sep;
-    size_t len;
-    char tmp[16];
-
-    // 1) Extraction de l'adresse IP de l'expéditeur
-    sep = strstr(p, FIELD_DELIM);
-    if (!sep) return -1;
-    len = sep - p;
-    memcpy(msg->sender_ip, p, len);
-    msg->sender_ip[len] = '\0';
-
-    // 2) Extraction du pseudo du destinataire
-    p = sep + strlen(FIELD_DELIM);
-    sep = strstr(p, FIELD_DELIM);
-    if (!sep) return -1;
-    len = sep - p;
-    memcpy(msg->dest_pseudo, p, len);
-    msg->dest_pseudo[len] = '\0';
-
-    // 3) Extraction du numéro de la partie du message
-    p = sep + strlen(FIELD_DELIM);
-    sep = strstr(p, FIELD_DELIM);
-    if (!sep) return -1;
-    len = sep - p;
-    memcpy(tmp, p, len); tmp[len] = '\0';
-    msg->part_num = atoi(tmp); // conversion en entier
-
-    // 4) Extraction du nombre total de parties
-    p = sep + strlen(FIELD_DELIM);
-    sep = strstr(p, PAYLOAD_DELIM);     
-    if (!sep) return -1;
-    len = sep - p;
-    memcpy(tmp, p, len); tmp[len] = '\0';
-    msg->total_parts = atoi(tmp);
-
-    // 5) Extraction du contenu (payload)
-    p = sep + strlen(PAYLOAD_DELIM);
-    strncpy(msg->payload, p, sizeof(msg->payload)-1);
-    msg->payload[sizeof(msg->payload)-1] = '\0';
-
-    return 0; 
-}
-
 
 void printMessage(const MessageInfo *m) {
     printf("Expéditeur IP       : %s\n", m->sender_ip);
@@ -202,48 +173,241 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     // Fermer les connexions TCP
     closeServer(socketTCP, clientTCP);
 }
+int main(void) {
+    signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
+    signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
+    int  sockfd         = initSocket();
+    User activeUsers[MAX_USERS];
+    int  numActiveUsers = 0;
+    char buffer[BUFFER_MAX];
+    struct sockaddr_in client;
 
-int main() {
-    
-    signal(SIGINT, handleSigint);
+    while (serverRunning) {
+        if (recvMessage(sockfd, buffer, sizeof(buffer), &client) < 0)
+            continue;
 
-    // Initialisation de la socket UDP
-    int sockfd = initSocket();
-
-    char buffer[BUFFER_MAX];          // buffer de réception de taille BUFFER_MAX
-    struct sockaddr_in client;        // structure pour l'adresse du client
-
-    // Boucle infinie : réception, parsing, affichage et envoi d'un Accusé de Réception
-    while (1) {
-        ssize_t r = recvMessage(sockfd, buffer, sizeof(buffer), &client);
-        if (r < 0) {
-            // en cas d’erreur de réception, affiche l’erreur et continue
-            perror("recvMessage");
+        MessageInfo msg;
+        if (parseMessage(buffer, &msg) != 0) {
+            sendAcR(sockfd, &client);
             continue;
         }
+        printMessage(&msg);
 
-        // parsing du message reçu dans une structure MessageInfo
-        MessageInfo msg;
-        if (parseMessage(buffer, &msg) == 0) {
-            // affichage du message s’il est bien parsé
-            printMessage(&msg);
-        } else {
+        // 1) On identifie la commande
+        CommandType cmd = getCommandType(msg.payload);
+        int         status;
+        char        response[BUFFER_MAX];
+
+        // 2) On dispatch via switch
+        switch (cmd) {
+            case cmdConnect:
+                status = connectCmd(msg.payload,
+                                    &client,
+                                    response,
+                                    sizeof(response),
+                                    activeUsers,
+                                    &numActiveUsers);
+                break;
+
+            case cmdDisconnect:
+                status = disconnectCmd(msg.payload,
+                                       &client,
+                                       response,
+                                       sizeof(response),
+                                       activeUsers,
+                                       numActiveUsers);
+                break;
+
+            case cmdRegister:
+                status = registerUser(msg.payload,
+                                      &client,
+                                      response,
+                                      sizeof(response),
+                                      activeUsers,
+                                      &numActiveUsers);
+                break;
+
+            case cmdMsg: {
+                // sendPrivateMsg renvoie l'index du destinataire ou <0
+                int destIndex = sendPrivateMsg(msg.payload,
+                                               &client,
+                                               response,
+                                               sizeof(response),
+                                               activeUsers,
+                                               numActiveUsers);
+                if (destIndex >= 0) {
+                    // on prépare l'adresse du destinataire
+                    struct sockaddr_in dest = {
+                        .sin_family = AF_INET,
+                        .sin_port   = htons(activeUsers[destIndex].port)
+                    };
+                    inet_pton(AF_INET,
+                              activeUsers[destIndex].ip,
+                              &dest.sin_addr);
+
+                    //  a) on envoie le message au destinataire
+                    sendto(sockfd,
+                           response,
+                           strlen(response),
+                           0,
+                           (struct sockaddr*)&dest,
+                           sizeof(dest));
+
+                    //  b) on confirme à l'expéditeur
+                    char confirm[BUFFER_MAX];
+                    snprintf(confirm,
+                             sizeof(confirm),
+                             "Message envoyé à %s",
+                             activeUsers[destIndex].pseudo);
+                    sendto(sockfd,
+                           confirm,
+                           strlen(confirm),
+                           0,
+                           (struct sockaddr*)&client,
+                           sizeof(client));
+
+                    printf("Message privé envoyé à %s\n",
+                           activeUsers[destIndex].pseudo);
+                } else {
+                    // échec → on renvoie simplement response à l'expéditeur
+                    sendto(sockfd,
+                           response,
+                           strlen(response),
+                           0,
+                           (struct sockaddr*)&client,
+                           sizeof(client));
+                }
+                // on a tout envoyé pour @msg, donc on passe au prochain tour
+                continue;
+            }
             
-            fprintf(stderr, "[WARN] parsing failed: %s\n", buffer);
+            // @help, @ping, @credits, @shutdown, @upload, @download
+            case cmdHelp:
+                status = helpCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);
+                break;
+
+            case cmdPing:
+                status = pingCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);;
+                break;
+            
+            case cmdCredits:
+                status = creditsCmd(msg.payload,
+                                    &client,
+                                    response,
+                                    sizeof(response),
+                                    activeUsers,
+                                    numActiveUsers);
+
+                break;
+
+            case cmdShutdown:
+                status = shutdownCmd(msg.payload,
+                                    &client,
+                                    response,
+                                    sizeof(response),
+                                    activeUsers,
+                                    numActiveUsers);
+
+                break;
+            /*
+            case cmdUpload:
+                status = uploadCmd(msg.payload,
+                                   &client,
+                                   response,
+                                   sizeof(response));
+                break;
+
+            case cmdDownload:
+                status = downloadCmd(msg.payload,
+                                     &client,
+                                     response,
+                                     sizeof(response));
+                break;
+            */
+            default: {
+                int authenticated = 0;
+                char client_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &client.sin_addr, client_ip, INET_ADDRSTRLEN);
+
+                for (int i = 0; i < numActiveUsers && !authenticated; i++) {
+                    if (activeUsers[i].isConnected
+                    && strcmp(activeUsers[i].ip, client_ip) == 0
+                    && activeUsers[i].port == ntohs(client.sin_port))
+                    {
+                        authenticated = 1;
+                    }
+                }
+
+                if (authenticated) {
+                    sendAcR(sockfd, &client);
+                } else {
+                    const char *auth_req =
+                        "Veuillez vous authentifier avec '@connect login mdp'";
+                    sendto(sockfd,
+                        auth_req,
+                        strlen(auth_req),
+                        0,
+                        (const struct sockaddr*)&client,
+                        sizeof(client));
+                }
+                continue;
+            }
+
+        }
+        // 3) pour toutes les autres commandes, on envoie la réponse ici
+        if (status >= 0) {
+            sendto(sockfd,
+                   response,
+                   strlen(response),
+                   0,
+                   (struct sockaddr*)&client,
+                   sizeof(client));
         }
 
-        if (strncmp(msg.payload, "@upload", 7) == 0 || strncmp(msg.payload, "@download", 9) == 0) {
-            // Si le message commence par @upload ou @download, traiter le transfert de fichier
-            handleFileTransfer(&msg, sockfd, &client);
-        } else {
-            // Sinon, traiter le message comme un message normal
-            printf("Message reçu : %s\n", buffer);
+        // Vérifier si c'est une commande d'arrêt
+        if (status == 2) {
+            printf("Commande d'arrêt reçue d'un administrateur. Arrêt du serveur...\n");
+            
+            // Notifier tous les utilisateurs connectés
+            for (int i = 0; i < numActiveUsers; i++) {
+                if (activeUsers[i].isConnected) {
+                    struct sockaddr_in dest = {
+                        .sin_family = AF_INET,
+                        .sin_port = htons(activeUsers[i].port)
+                    };
+                    inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
+                    
+                    
+                   const char *shutdownMsg = "Le serveur va s'arrêter. Veuillez redémarrer votre client plus tard.\n";
+                    
+                    // Envoi avec vérification
+                    if (sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 
+                            (struct sockaddr*)&dest, sizeof(dest)) < 0) {
+                        printf("Erreur lors de l'envoi du message d'arrêt à %s\n", activeUsers[i].pseudo);
+                    } else {
+                        printf("Message d'arrêt envoyé à %s\n", activeUsers[i].pseudo);
+                    }
+                    
+                    
+                }
+            }
+        
+            // Fermer proprement le socket et arrêter le serveur
+            close(sockfd);
+            raise(SIGINT); // Appeler le handler de signal pour arrêter le serveur
+            printf("Serveur arrêté.\n");
         }
-
-        // envoi d’un accusé de réception au client qui a envoyé le message
-        sendAcR(sockfd, &client);
     }
 
-    
     return EXIT_SUCCESS;
 }
