@@ -83,7 +83,7 @@ void sendAcR(int sockfd, const struct sockaddr_in *cli) {
     }
 }
 
-void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr_in *client) {
+int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr_in *client) {
     // Format attendu: "@upload:<fichier>" ou "@download:<fichier>"
     printf("Traitement du transfert de fichier...\n");
     
@@ -96,13 +96,13 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     operation = strtok(command, " ");
     if (!operation) {
         printf("Format de commande invalide\n");
-        return;
+        return -1;
     }
     
     filename = strtok(NULL, " ");
     if (!filename) {
         printf("Nom de fichier manquant\n");
-        return;
+        return -1;
     }
     
     printf("Initialisation transfert de fichier avec %s...\n", inet_ntoa(client->sin_addr));
@@ -117,7 +117,7 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
         strcpy(clientOperation, "DOWNLOAD");
     } else {
         printf("Opération non reconnue: %s\n", operation);
-        return;
+        return -1;
     }
     
     // Envoi d'une commande TCP au client pour l'informer qu'une connexion TCP va être établie
@@ -128,7 +128,7 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     socklen_t len = sizeof(*client);
     if (sendto(sockfd, tcpResponse, strlen(tcpResponse), 0, (const struct sockaddr*)client, len) < 0) {
         perror("Erreur envoi commande TCP");
-        return;
+        return -1;
     }
     
     printf("Commande TCP envoyée: %s\n", tcpResponse);
@@ -138,7 +138,7 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     int socketTCP = initTCPSocketServer();
     if (socketTCP < 0) {
         printf("Échec initialisation serveur TCP\n");
-        return;
+        return -1;
     }
     
     printf("En attente d'une connexion TCP...\n");
@@ -146,7 +146,7 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     if (clientTCP < 0)  {
         printf("Échec connexion TCP avec le client\n");
         closeServer(socketTCP, clientTCP); // Pass the appropriate second argument based on the function definition
-        return;
+        return -1;
     }
     
     int result;
@@ -172,6 +172,8 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     
     // Fermer les connexions TCP
     closeServer(socketTCP, clientTCP);
+
+    return 1;
 }
 int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
@@ -319,21 +321,19 @@ int main(void) {
                                     numActiveUsers);
 
                 break;
-            /*
+            
             case cmdUpload:
-                status = uploadCmd(msg.payload,
-                                   &client,
-                                   response,
-                                   sizeof(response));
+                status = handleFileTransfer(&msg,
+                                     sockfd,
+                                     &client);
                 break;
 
             case cmdDownload:
-                status = downloadCmd(msg.payload,
-                                     &client,
-                                     response,
-                                     sizeof(response));
+                status = handleFileTransfer(&msg,
+                                     sockfd,
+                                     &client);
                 break;
-            */
+            
             default: {
                 int authenticated = 0;
                 char client_ip[INET_ADDRSTRLEN];
