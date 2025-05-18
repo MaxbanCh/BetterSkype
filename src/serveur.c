@@ -122,13 +122,13 @@ void handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockadd
     char *operation, *filename;
     
     // Extraire les informations du message
-    operation = strtok(command, ":");
+    operation = strtok(command, " ");
     if (!operation) {
         printf("Format de commande invalide\n");
         return;
     }
     
-    filename = strtok(NULL, ":");
+    filename = strtok(NULL, " ");
     if (!filename) {
         printf("Nom de fichier manquant\n");
         return;
