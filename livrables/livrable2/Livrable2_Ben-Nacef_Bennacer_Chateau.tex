@@ -1,0 +1,104 @@
+\documentclass{cs-moi}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Projet Messagerie C - Livrable 2}
+\author{Wassim Ben Nacef - Nabil Bennacer - Max Chateau}
+\date{Polytech Montpellier - IG 3} 
+
+\begin{document}
+\maketitle{}
+\begin{center}
+	\includegraphics[width=0.3\linewidth]{logoPolytech.png}
+\end{center}
+
+\vspace{4pt}
+    \hrule
+\vspace{4pt}
+
+\section{Avancement du projet}
+\subsection{Mise en place des commandes}
+Le système de commandes implémenté est tel qu'indiqué dans le sujet :
+
+\begin{itemize}
+    \item \texttt{\textbf{@connect <pseudo> <password>}} : Permet à un utilisateur de se connecter avec ses identifiants. Si l'utilisateur n'existe pas, il est automatiquement enregistré avec le mot de passe fourni.
+    
+    \item \texttt{\textbf{@disconnect}} : Déconnecte l'utilisateur actuel et libère sa session.
+  
+    \item \texttt{\textbf{@register <pseudo> <password>}} : Enregistre explicitement un nouvel utilisateur dans le système.
+  
+    \item \texttt{\textbf{@msg <destinataire> <message>}} : Permet d'envoyer un message privé à un utilisateur connecté. Le message est acheminé uniquement vers le destinataire spécifié.
+  
+    \item \texttt{\textbf{@ping}} : Vérifie la connexion au serveur et renvoie le statut de l'utilisateur (connecté ou non).
+  
+    \item \texttt{\textbf{@help}} : Affiche l'aide avec la liste des commandes disponibles.
+  
+    \item \texttt{\textbf{@credits}} : Affiche les informations sur l'équipe de développement du projet.
+  
+    \item \texttt{\textbf{@shutdown}} : Commande administrative permettant l'arrêt propre du serveur avec notification à tous les utilisateurs connectés.
+
+    \item \texttt{\textbf{@upload (ou @download) <fichier>}} : Gestion des fichiers (fonctionnement detaille dans la derniere partie)
+  \end{itemize}
+  
+  L'implémentation repose sur la fonction \texttt{getCommandType()} qui analyse le préfixe du message. Chaque commande est ensuite traitée par une fonction dédiée qui vérifie les permissions de l'utilisateur et exécute l'action correspondante.
+
+  \subsection{Gestion des utilisateurs}
+  
+  Nous avons développé le système de gestion des utilisateurs avec les fonctionnalités suivantes :
+  
+  \begin{itemize}
+    \item \textbf{Authentification} : Les identifiants utilisateur sont vérifiés via un fichier CSV (\texttt{users.csv}) qui stocke les couples pseudo/mot de passe.
+  
+    \item \textbf{Enregistrement automatique} : Lors d'une première connexion, si l'utilisateur n'existe pas, il est automatiquement enregistré dans le système.
+  
+    \item \textbf{Gestion des sessions} : Le serveur maintient une liste des utilisateurs actifs et de leurs informations de connexion (IP, port) dans un tableau \texttt{activeUsers}.
+  
+    \item \textbf{Détection de multiples connexions} : Le système empêche un même utilisateur de se connecter simultanément depuis plusieurs clients différents.
+  
+    \item \textbf{Gestion des droits administrateurs} : Le premier utilisateur à se connecter au serveur reçoit automatiquement des privilèges d'administration, lui permettant notamment d'utiliser la commande \texttt{@shutdown}.
+  
+    \item \textbf{Structure de données optimisée} : Chaque utilisateur est représenté par une structure \texttt{User} contenant :
+    \begin{itemize}
+      \item Pseudo (limité à \texttt{PSEUDO\_MAX} caractères)
+      \item Mot de passe (stocké en clair pour ce prototype)
+      \item Adresse IP et port du client
+      \item État de connexion (connecté/déconnecté)
+      \item Statut d'administrateur
+    \end{itemize}
+  \end{itemize}
+
+
+\subsection{Gestion des fichiers}
+On a implementé un système de transfert de fichiers qui s'appuie sur le protocole TCP pour garantir l'intégrité des données transmises. Contrairement aux messages texte qui utilisent UDP, le transfert de fichiers nécessite une connexion fiable et une confirmation de réception pour chaque partie du fichier, de plus il s'agit d'opérations effectués moins régulièrement que les envois de messages.
+
+\begin{itemize}
+    \item \textbf{Architecture double protocole} : Nous utilisons UDP pour la messagerie instantanée et TCP pour le transfert de fichiers, offrant ainsi un bon équilibre entre performance et fiabilité selon le type de données à transmettre.
+    
+    \item \textbf{Commandes spécifiques} : Le transfert de fichiers est initié par des commandes dédiées :
+    \begin{itemize}
+        \item \texttt{\textbf{@upload <fichier>}} : Permet à un utilisateur d'envoyer un fichier au serveur.
+        \item \texttt{\textbf{@download <fichier>}} : Permet à un utilisateur de télécharger un fichier stocké sur le serveur.
+    \end{itemize}
+    
+    \item \textbf{Mécanisme en deux phases} : 
+    \begin{itemize}
+        \item Phase 1 : L'utilisateur envoie une requête de transfert via le canal UDP normal.
+        \item Phase 2 : Le serveur répond par un message de type \texttt{TCP:<OPERATION>:<fichier>:<ip>} qui déclenche l'établissement d'une connexion TCP dédiée.
+    \end{itemize}
+    
+    \item \textbf{Gestion des flux de données} : 
+    \begin{itemize}
+        \item Envoi par blocs de taille définie (\texttt{BUFFER\_MAX})
+        \item Accusés de réception pour chaque bloc transmis
+        \item Contrôle des erreurs à chaque étape du processus
+    \end{itemize}
+        
+    \item \textbf{Sécurité et fiabilité} : 
+    \begin{itemize}
+        \item Vérification de l'état des fichiers avant transmission
+        \item Gestion des erreurs à chaque étape du processus
+        \item On considère qu'un seul utilisateur à la fois peut envoyer ou recevoir un fichier (pour le moment)
+    \end{itemize}
+\end{itemize}
+\end{document}

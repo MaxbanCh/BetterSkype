@@ -3,7 +3,7 @@
 // #include <arpa/inet.h>
 
 #ifndef __MESSAGEH__
-#define MESSAGEH
+#define __MESSAGEH__
 // si ces constantes ne sont pas définies ailleurs, on les fixe ici :
 #ifndef PSEUDO_MAX
 #define PSEUDO_MAX 50

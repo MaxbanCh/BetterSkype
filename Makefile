@@ -18,6 +18,7 @@ SERVEUR_SRC = $(SRC_DIR)/serveur.c
 MESSAGE_SRC = $(DEP_DIR)/message.c
 USER_SRC    = $(DEP_DIR)/user.c
 COMMAND_SRC = $(DEP_DIR)/command.c
+TCPFILE_SRC = $(DEP_DIR)/TCPFile.c
 
 # Fichiers objets et lib
 MESSAGE_OBJ = $(DEP_DIR)/message.o
@@ -26,6 +27,8 @@ USER_OBJ    = $(DEP_DIR)/user.o
 USER_LIB    = $(DEP_DIR)/libuser.so
 COMMAND_OBJ = $(DEP_DIR)/command.o
 COMMAND_LIB = $(DEP_DIR)/libcommand.so
+TCPFILE_OBJ = $(DEP_DIR)/TCPFile.o
+TCPFILE_LIB = $(DEP_DIR)/libTCPFile.so
 
 # Exécutables
 CLIENT_BIN  = $(BIN_DIR)/client
@@ -33,15 +36,15 @@ SERVEUR_BIN = $(BIN_DIR)/serveur
 
 # Options de compilation
 CFLAGS  = -Wall -fPIC -I$(DEP_DIR)
-LDFLAGS = -L$(DEP_DIR) -lcommand -luser -lmessage -Wl,-rpath,$(DEP_DIR)
+LDFLAGS = -L$(DEP_DIR) -lcommand -luser -lmessage -lTCPFile -Wl,-rpath,$(DEP_DIR)
 
 # Cibles
-all: $(MESSAGE_LIB) $(USER_LIB) $(COMMAND_LIB) $(CLIENT_BIN) $(SERVEUR_BIN)
+all: $(MESSAGE_LIB) $(USER_LIB) $(COMMAND_LIB) $(TCPFILE_LIB) $(CLIENT_BIN) $(SERVEUR_BIN)
 
 $(MESSAGE_LIB): $(MESSAGE_SRC)
 	gcc $(CFLAGS) -c $(MESSAGE_SRC) -o $(MESSAGE_OBJ)
 	gcc -shared $(MESSAGE_OBJ) -o $(MESSAGE_LIB)
-	
+		
 $(USER_LIB): $(USER_SRC)
 	gcc $(CFLAGS) -c $(USER_SRC) -o $(USER_OBJ)
 	gcc -shared $(USER_OBJ) -o $(USER_LIB)
@@ -51,13 +54,17 @@ $(COMMAND_LIB): $(COMMAND_SRC) $(DEP_DIR)/header.h $(DEP_DIR)/command.h $(USER_L
 	gcc -shared $(COMMAND_OBJ) -o $(COMMAND_LIB) \
 	    -L$(DEP_DIR) -luser -lmessage -Wl,-rpath,$(DEP_DIR)
 
-$(CLIENT_BIN): $(CLIENT_SRC)
+$(TCPFILE_LIB): $(TCPFILE_SRC) $(MESSAGE_LIB)
+	gcc $(CFLAGS) -c $(TCPFILE_SRC) -o $(TCPFILE_OBJ)
+	gcc -shared $(TCPFILE_OBJ) -o $(TCPFILE_LIB)
+
+$(CLIENT_BIN): $(CLIENT_SRC) $(MESSAGE_LIB) $(TCPFILE_LIB)
 	gcc $(CFLAGS) $(CLIENT_SRC) -o $(CLIENT_BIN) $(LDFLAGS)
 
-$(SERVEUR_BIN): $(SERVEUR_SRC)
+$(SERVEUR_BIN): $(SERVEUR_SRC) $(MESSAGE_LIB) $(TCPFILE_LIB)
 	gcc $(CFLAGS) $(SERVEUR_SRC) -o $(SERVEUR_BIN) $(LDFLAGS)
 
 clean:
-	rm -f $(DEP_DIR)/*.o $(DEP_DIR)/libmessage.so $(DEP_DIR)/libuser.so $(DEP_DIR)/libcommand.so $(BIN_DIR)/client $(BIN_DIR)/serveur
+	rm -f $(DEP_DIR)/*.o $(DEP_DIR)/libmessage.so $(DEP_DIR)/libuser.so $(DEP_DIR)/libcommand.so $(DEP_DIR)/libTCPFile.so $(BIN_DIR)/client $(BIN_DIR)/serveur
 
 .PHONY: all clean
