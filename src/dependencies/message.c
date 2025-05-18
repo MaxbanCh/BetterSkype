@@ -17,7 +17,7 @@
 char *createMessage(char *ip, char *dest, char *msg)
 {
     char *message = malloc(1024*sizeof(char));
-    
+
     strcpy(message, ip);
     strcat(message, "//");
 

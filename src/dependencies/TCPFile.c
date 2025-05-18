@@ -10,8 +10,8 @@
 #include "header.h"
 
 
-static void handleSigint(int sig) {
-    (void)sig;  
+static void handleSigint() {
+    // (void)sig;  
     printf("\nArrêt serveur\n");
     //close(sockfd); 
     exit(EXIT_SUCCESS);
@@ -21,9 +21,16 @@ int initTCPSocketServer() {
     int fd = socket(PF_INET, SOCK_STREAM, 0); 
     if (fd < 0) { perror("socket"); exit(EXIT_FAILURE); }
 
+    int option = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) < 0) {
+        perror("setsockopt(SO_REUSEADDR)");
+        close(fd);
+        return -1;
+    }
+
     struct sockaddr_in addr = {
         .sin_family      = AF_INET,         // famille d'adresses : IPv4
-        .sin_port        = htons(PORT),     // port d'écoute
+        .sin_port        = htons(34567),     // port d'écoute
         .sin_addr.s_addr = INADDR_ANY       // écoute sur toutes les interfaces
     };
 
@@ -39,8 +46,7 @@ int initTCPSocketServer() {
         exit(1);
     }
 
-
-    printf("Serveur TCP démarré sur le port %d\n", PORT);
+    printf("Serveur TCP démarré sur le port %d\n", 34567);
     return fd; 
 }   
 
@@ -50,7 +56,7 @@ int initTCPSocketClient(char *ip) {
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;         // famille d'adresses : IPv4
-    addr.sin_port = htons(PORT);       // port d'écoute
+    addr.sin_port = htons(34567);       // port d'écoute
 
 
     int res = inet_pton(AF_INET, ip, &(addr.sin_addr));
@@ -92,12 +98,14 @@ int sendFile(int socket, char *file)
     size_t bytesRead;
     long fileSize;
     int ret;
+
+    int flag = 0;
     
     // Ouvrir le fichier en mode lecture binaire
     fp = fopen(file, "rb");
     if (fp == NULL) {
         perror("Erreur lors de l'ouverture du fichier");
-        return -1;
+        flag = -1;
     }
     
     // Obtenir la taille du fichier
@@ -107,42 +115,42 @@ int sendFile(int socket, char *file)
 
     // 1. Envoyer la taille du fichier
     ret = send(socket, &fileSize, sizeof(fileSize), 0);
-    if (ret < 0) {
+    if (ret < 0 && flag == 0) {
         perror("Erreur lors de l'envoi de la taille du fichier");
         fclose(fp);
-        return -2;
+        flag = -2;
     }
     
     // 2. Attendre l'accusé de réception du client (ACK)
     char ack;
     ret = recv(socket, &ack, 1, 0);
-    if (ret <= 0 || ack != 'A') {  // 'A' pour ACK
+    if ((ret <= 0 || ack != 'A') && flag == 0) {  // 'A' pour ACK
         fprintf(stderr, "Erreur: accusé de réception non reçu ou incorrect\n");
         fclose(fp);
-        return -3;
+        flag = -3;
     }
 
     // 3. Envoyer le contenu du fichier par blocs
-    while ((bytesRead = fread(buffer, 1, BUFFER_MAX, fp)) > 0) {
+    while ((bytesRead = fread(buffer, 1, BUFFER_MAX, fp)) > 0 && flag == 0) {
         // Envoyer le bloc
         ret = send(socket, buffer, bytesRead, 0);
-        if (ret < 0) {
+        if (ret < 0 && flag == 0) {
             perror("Erreur lors de l'envoi du bloc de données");
             fclose(fp);
-            return -4;
+            flag = -4;
         }
         
         // Attendre l'accusé de réception pour ce bloc
         ret = recv(socket, &ack, 1, 0);
-        if (ret <= 0 || ack != 'A') {
+        if (ret <= 0 || ack != 'A' && flag == 0) {  // 'A' pour ACK
             fprintf(stderr, "Erreur: accusé de réception non reçu ou incorrect pour un bloc\n");
             fclose(fp);
-            return -5;
+            flag = -5;
         }
     }
     
     fclose(fp);
-    return 0;  // Succès
+    return flag;  // Succès
 }
 
 int receiveFile(int socket, char *file)
@@ -153,36 +161,38 @@ int receiveFile(int socket, char *file)
     long fileSize;
     int ret;
 
+    int flag = 0;
+
     // 1. Recevoir la taille du fichier
     ret = recv(socket, &fileSize, sizeof(fileSize), 0);
     if (ret <= 0) {
         perror("Erreur lors de la réception de la taille du fichier");
-        return -1;
+        flag = -1;
     }
 
     // Ouvrir le fichier en mode écriture binaire
     fp = fopen(file, "wb");
-    if (fp == NULL) {
+    if (fp == NULL && flag == 0) {
         perror("Erreur lors de l'ouverture du fichier");
-        return -2;
+        flag = -2;
     }
 
     // 2. Envoyer l'accusé de réception (ACK)
     char ack = 'A';
     ret = send(socket, &ack, 1, 0);
-    if (ret < 0) {
+    if (ret < 0 && flag == 0) {
         perror("Erreur lors de l'envoi de l'accusé de réception");
         fclose(fp);
-        return -3;
+        flag = -3;
     }
 
     // 3. Recevoir le contenu du fichier par blocs
-    while (fileSize > 0) {
+    while (fileSize > 0 && flag == 0) {
         bytesReceived = recv(socket, buffer, BUFFER_MAX, 0);
-        if (bytesReceived <= 0) {
+        if (bytesReceived <= 0 && flag == 0) {
             perror("Erreur lors de la réception du bloc de données");
             fclose(fp);
-            return -4;
+            flag = -4;
         }
 
         // Écrire le bloc dans le fichier
@@ -191,15 +201,15 @@ int receiveFile(int socket, char *file)
 
         // Envoyer l'accusé de réception pour ce bloc
         ret = send(socket, &ack, 1, 0);
-        if (ret < 0) {
+        if (ret < 0 && flag == 0) {
             perror("Erreur lors de l'envoi de l'accusé de réception pour un bloc");
             fclose(fp);
-            return -5;
+            flag = -5;
         }
     }
 
     fclose(fp);
-    return 0;  // Succès
+    return flag;  // Succès
 }
 
 void closeServer(int socket, int socketClient)
