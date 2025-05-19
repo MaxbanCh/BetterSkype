@@ -328,15 +328,29 @@ int main(void) {
                 break;
             
             case cmdUpload:
-                status = handleFileTransfer(&msg,
-                                     sockfd,
-                                     &client);
+                status = uploadCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);
+                if (status == 3) {
+                    // Initialiser le transfert de fichier
+                    handleFileTransfer(&msg, sockfd, &client);
+                }
                 break;
 
             case cmdDownload:
-                status = handleFileTransfer(&msg,
-                                     sockfd,
-                                     &client);
+                status = downloadCmd(msg.payload, 
+                                &client, 
+                                response, 
+                                sizeof(response), 
+                                activeUsers, 
+                                numActiveUsers);
+                if (status == 4) {
+                    // Initialiser le transfert de fichier
+                    handleFileTransfer(&msg, sockfd, &client);
+                }
                 break;
             
             default: {

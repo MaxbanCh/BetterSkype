@@ -451,3 +451,117 @@ int shutdownCmd(const char *payload, const struct sockaddr_in *client,
     
     return result;
 }
+
+// Traite la commande @upload
+int uploadCmd(const char *payload, const struct sockaddr_in *client, 
+             char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
+    
+    int result = 0;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    // Vérifier que l'utilisateur est connecté
+    int isConnected = 0;
+    char userName[PSEUDO_MAX] = "Anonyme";
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    if (!isConnected) {
+        snprintf(response, responseSize, "Vous devez être connecté pour envoyer un fichier.");
+        return result;
+    }
+    
+    // Extraire le nom du fichier
+    char filename[256];
+    memset(filename, 0, sizeof(filename));
+    
+    if (sscanf(payload, "@upload %255s", filename) != 1) {
+        snprintf(response, responseSize, "Format invalide. Utilisez: @upload <nom_fichier>");
+        return result;
+    }
+    
+    // Vérifier que le nom de fichier est valide (pas de caractères spéciaux dangereux)
+    for (i = 0; i < strlen(filename); i++) {
+        if (filename[i] == '\\'
+            || filename[i] == '?' || filename[i] == '*' || filename[i] == ':' ||
+            filename[i] == '<' || filename[i] == '>' || filename[i] == '|') {
+            snprintf(response, responseSize, "Nom de fichier invalide. Les caractères suivants ne sont pas autorisés: /\\*?:<>|");
+            return result;
+        }
+    }
+    
+    // Préparer la réponse
+    snprintf(response, responseSize, "Préparation à la réception du fichier %s depuis %s...", 
+             filename, userName);
+    
+    // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
+    result = 3;  // Code spécial pour le transfert de fichier
+    
+    return result;
+}
+
+// Traite la commande @download
+int downloadCmd(const char *payload, const struct sockaddr_in *client, 
+               char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
+    
+    int result = 0;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    // Vérifier que l'utilisateur est connecté
+    int isConnected = 0;
+    char userName[PSEUDO_MAX] = "Anonyme";
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    if (!isConnected) {
+        snprintf(response, responseSize, "Vous devez être connecté pour télécharger un fichier.");
+        return result;
+    }
+    
+    // Extraire le nom du fichier
+    char filename[256];
+    memset(filename, 0, sizeof(filename));
+    
+    if (sscanf(payload, "@download %255s", filename) != 1) {
+        snprintf(response, responseSize, "Format invalide. Utilisez: @download <nom_fichier>");
+        return result;
+    }
+    
+    // Vérifier que le fichier existe sur le serveur
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        snprintf(response, responseSize, "Le fichier %s n'existe pas sur le serveur.", filename);
+        return result;
+    }
+    fclose(file);
+    
+    // Préparer la réponse
+    snprintf(response, responseSize, "Préparation à l'envoi du fichier %s à %s...", 
+             filename, userName);
+    
+    // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
+    result = 4;  // Code spécial pour le transfert de fichier download
+    
+    return result;
+}
