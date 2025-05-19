@@ -19,7 +19,7 @@
 #include "user.h"
 #include "command.h"
 #include "dependencies/TCPFile.h"       
-
+#include <pthread.h>
 
 int serverRunning = 1;
 int sockfd; // // Socket globale pour pouvoir la fermer avec ctrl+c
@@ -134,47 +134,38 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     printf("Commande TCP envoyée: %s\n", tcpResponse);
     
     // Initialiser le mode serveur TCP et attendre une connexion
-    printf("Démarrage du serveur TCP...\n");
     int socketTCP = initTCPSocketServer();
     if (socketTCP < 0) {
         printf("Échec initialisation serveur TCP\n");
         return -1;
     }
-    
-    printf("En attente d'une connexion TCP...\n");
-    int clientTCP = connexionTCP(socketTCP);
-    if (clientTCP < 0)  {
-        printf("Échec connexion TCP avec le client\n");
-        closeServer(socketTCP, clientTCP); // Pass the appropriate second argument based on the function definition
+    FileTransferParams *params = malloc(sizeof(FileTransferParams));
+    if (!params) {
+        perror("Allocation mémoire pour les paramètres");
+        closeServer(socketTCP, -1);
         return -1;
     }
     
-    int result;
-    if (strcmp(operation, "@upload") == 0) {
-        // Client upload = serveur reçoit
-        printf("Réception du fichier %s en cours...\n", filename);
-        result = receiveFile(clientTCP, filename);
-        if (result == 0) {
-            printf("Fichier reçu avec succès\n");
-        } else {
-            printf("Erreur lors de la réception du fichier (code %d)\n", result);
-        }
-    } else if (strcmp(operation, "@download") == 0) {
-        // Client download = serveur envoie
-        printf("Envoi du fichier %s en cours...\n", filename);
-        result = sendFile(clientTCP, filename);
-        if (result == 0) {
-            printf("Fichier envoyé avec succès\n");
-        } else {
-            printf("Erreur lors de l'envoi du fichier (code %d)\n", result);
-        }
+    params->operation = strdup(operation);
+    params->filename = strdup(filename);
+    memcpy(&params->client, client, sizeof(struct sockaddr_in));
+    params->socketTCP = socketTCP;
+    
+    // Créer un thread pour gérer le transfert
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, fileTransferThreadServer, params) != 0) {
+        perror("Échec création thread");
+        free(params);
+        closeServer(socketTCP, -1);
+        return -1;
     }
     
-    // Fermer les connexions TCP
-    closeServer(socketTCP, clientTCP);
-
+    // Détacher le thread pour qu'il se libère automatiquement à la fin
+    pthread_detach(thread);
     return 1;
 }
+
+
 int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown

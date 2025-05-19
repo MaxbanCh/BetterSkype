@@ -36,7 +36,7 @@ SERVEUR_BIN = $(BIN_DIR)/serveur
 
 # Options de compilation
 CFLAGS  = -Wall -fPIC -I$(DEP_DIR)
-LDFLAGS = -L$(DEP_DIR) -lcommand -luser -lmessage -lTCPFile -Wl,-rpath,$(DEP_DIR)
+LDFLAGS = -L$(DEP_DIR) -lcommand -luser -lmessage -lTCPFile -Wl,-rpath,$(DEP_DIR) -pthread
 
 # Cibles
 all: $(MESSAGE_LIB) $(USER_LIB) $(COMMAND_LIB) $(TCPFILE_LIB) $(CLIENT_BIN) $(SERVEUR_BIN)
@@ -59,10 +59,10 @@ $(TCPFILE_LIB): $(TCPFILE_SRC) $(MESSAGE_LIB)
 	gcc -shared $(TCPFILE_OBJ) -o $(TCPFILE_LIB)
 
 $(CLIENT_BIN): $(CLIENT_SRC) $(MESSAGE_LIB) $(TCPFILE_LIB)
-	gcc $(CFLAGS) $(CLIENT_SRC) -o $(CLIENT_BIN) $(LDFLAGS)
+	gcc $(CFLAGS) $(CLIENT_SRC) -o $(CLIENT_BIN) $(LDFLAGS) -pthread
 
 $(SERVEUR_BIN): $(SERVEUR_SRC) $(MESSAGE_LIB) $(TCPFILE_LIB)
-	gcc $(CFLAGS) $(SERVEUR_SRC) -o $(SERVEUR_BIN) $(LDFLAGS)
+	gcc $(CFLAGS) $(SERVEUR_SRC) -o $(SERVEUR_BIN) $(LDFLAGS) -pthread
 
 clean:
 	rm -f $(DEP_DIR)/*.o $(DEP_DIR)/libmessage.so $(DEP_DIR)/libuser.so $(DEP_DIR)/libcommand.so $(DEP_DIR)/libTCPFile.so $(BIN_DIR)/client $(BIN_DIR)/serveur
