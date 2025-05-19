@@ -453,6 +453,7 @@ int shutdownCmd(const char *payload, const struct sockaddr_in *client,
 }
 
 // Traite la commande @upload
+// Traite la commande @upload
 int uploadCmd(const char *payload, const struct sockaddr_in *client, 
              char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
@@ -463,7 +464,17 @@ int uploadCmd(const char *payload, const struct sockaddr_in *client,
     
     // Vérifier que l'utilisateur est connecté
     int isConnected = 0;
-    char userName[PSEUDO_MAX] = "Anonyme";
+    char userName[PSEUDO_MAX];
+    memset(userName, 0, sizeof(userName));
+
+    // Plus tard dans le code, avant d'utiliser userName:
+    if (userName[0] == '\0') {
+        // Utilisateur non identifié
+        snprintf(response, responseSize, "Vous devez être connecté pour cette action.");
+    } else {
+        // Utilisateur identifié
+        snprintf(response, responseSize, "Action effectuée par %s", userName);
+    }
     int i = 0;
     
     while (i < numActiveUsers && !isConnected) {
@@ -483,32 +494,51 @@ int uploadCmd(const char *payload, const struct sockaddr_in *client,
     
     // Extraire le nom du fichier
     char filename[256];
+    char baseName[256]; // Pour stocker seulement le nom du fichier sans chemin
     memset(filename, 0, sizeof(filename));
+    memset(baseName, 0, sizeof(baseName));
     
     if (sscanf(payload, "@upload %255s", filename) != 1) {
         snprintf(response, responseSize, "Format invalide. Utilisez: @upload <nom_fichier>");
         return result;
     }
     
+    // Extraire le nom de base du fichier (sans chemin)
+    const char *basePtr = strrchr(filename, '/');
+    if (basePtr) {
+        strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+    } else {
+        // Pas de '/' trouvé, vérifier aussi '\'
+        basePtr = strrchr(filename, '\\');
+        if (basePtr) {
+            strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+        } else {
+            strncpy(baseName, filename, sizeof(baseName) - 1);
+        }
+    }
+    
     // Vérifier que le nom de fichier est valide (pas de caractères spéciaux dangereux)
-    for (i = 0; i < strlen(filename); i++) {
-        if (filename[i] == '\\'
-            || filename[i] == '?' || filename[i] == '*' || filename[i] == ':' ||
-            filename[i] == '<' || filename[i] == '>' || filename[i] == '|') {
-            snprintf(response, responseSize, "Nom de fichier invalide. Les caractères suivants ne sont pas autorisés: /\\*?:<>|");
+    for (i = 0; i < strlen(baseName); i++) {
+        if (baseName[i] < 32 || baseName[i] > 126) {
+            snprintf(response, responseSize, "Nom de fichier invalide: contient des caractères non autorisés.");
             return result;
         }
     }
     
-    // Préparer la réponse
-    snprintf(response, responseSize, "Préparation à la réception du fichier %s depuis %s...", 
-             filename, userName);
+    // Construire le chemin complet vers le répertoire de réception
+    char destPath[512];
+    snprintf(destPath, sizeof(destPath), "files/receive/%s", baseName);
+    
+    // Préparer la réponse avec le chemin de destination
+    snprintf(response, responseSize, "FILES:%s|Le serveur a recu le fichier %s envoyé par %s", 
+         destPath, baseName, userName);
     
     // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
     result = 3;  // Code spécial pour le transfert de fichier
     
     return result;
 }
+
 
 // Traite la commande @download
 int downloadCmd(const char *payload, const struct sockaddr_in *client, 
@@ -541,24 +571,44 @@ int downloadCmd(const char *payload, const struct sockaddr_in *client,
     
     // Extraire le nom du fichier
     char filename[256];
+    char baseName[256]; // Pour stocker seulement le nom du fichier sans chemin
     memset(filename, 0, sizeof(filename));
+    memset(baseName, 0, sizeof(baseName));
     
     if (sscanf(payload, "@download %255s", filename) != 1) {
         snprintf(response, responseSize, "Format invalide. Utilisez: @download <nom_fichier>");
         return result;
     }
     
-    // Vérifier que le fichier existe sur le serveur
-    FILE *file = fopen(filename, "r");
+    // Extraire le nom de base du fichier (sans chemin)
+    const char *basePtr = strrchr(filename, '/');
+    if (basePtr) {
+        strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+    } else {
+        // Pas de '/' trouvé, vérifier aussi '\'
+        basePtr = strrchr(filename, '\\');
+        if (basePtr) {
+            strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+        } else {
+            strncpy(baseName, filename, sizeof(baseName) - 1);
+        }
+    }
+    
+    // Construire le chemin complet pour vérifier si le fichier existe
+    char sourcePath[512];
+    snprintf(sourcePath, sizeof(sourcePath), "files/send/%s", baseName);
+    
+    // Vérifier que le fichier existe dans le dossier files/send/
+    FILE *file = fopen(sourcePath, "r");
     if (!file) {
-        snprintf(response, responseSize, "Le fichier %s n'existe pas sur le serveur.", filename);
+        snprintf(response, responseSize, "Le fichier %s n'existe pas dans le dossier de partage.", baseName);
         return result;
     }
     fclose(file);
     
-    // Préparer la réponse
-    snprintf(response, responseSize, "Préparation à l'envoi du fichier %s à %s...", 
-             filename, userName);
+    // Préparer la réponse avec le chemin source
+    snprintf(response, responseSize, "FILES:%s|Le serveur a envoyé le fichier %s demandé par %s", 
+         sourcePath, baseName, userName);
     
     // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
     result = 4;  // Code spécial pour le transfert de fichier download

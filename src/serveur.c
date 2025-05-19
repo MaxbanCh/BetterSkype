@@ -89,13 +89,15 @@ void sendAcR(int sockfd, const struct sockaddr_in *cli) {
 }
 
 int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr_in *client) {
-    // Format attendu: "@upload:<fichier>" ou "@download:<fichier>"
+    // Format attendu: "@upload <fichier>" ou "@download <fichier>"
     printf("Traitement du transfert de fichier...\n");
     
     char command[BUFFER_MAX];
     strncpy(command, msg->payload, sizeof(command) - 1);
+    command[sizeof(command) - 1] = '\0';
     
     char *operation, *filename;
+    char filepath[512];  // Pour stocker le chemin complet
     
     // Extraire les informations du message
     operation = strtok(command, " ");
@@ -110,16 +112,33 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
         return -1;
     }
     
+    // Extraire le nom de base du fichier sans chemin
+    const char *baseName = strrchr(filename, '/');
+    if (baseName) {
+        baseName++; // Passer après le '/'
+    } else {
+        baseName = strrchr(filename, '\\');
+        if (baseName) {
+            baseName++; // Passer après le '\'
+        } else {
+            baseName = filename; // Pas de séparateur trouvé
+        }
+    }
+    
     printf("Initialisation transfert de fichier avec %s...\n", inet_ntoa(client->sin_addr));
     
-    // Déterminer l'opération complémentaire à envoyer au client
+    // Déterminer l'opération et construire le chemin approprié
     char clientOperation[10];
     if (strcmp(operation, "@upload") == 0) {
-        // Le client veut uploader, le serveur va recevoir
+        // Le client veut uploader, le serveur va recevoir dans files/send
         strcpy(clientOperation, "UPLOAD");
+        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);  // CHANGÉ DE receive À send
+        printf("Fichier sera reçu dans: %s\n", filepath);
     } else if (strcmp(operation, "@download") == 0) {
-        // Le client veut télécharger, le serveur va envoyer
+        // Le client veut télécharger, le serveur va envoyer depuis files/send
         strcpy(clientOperation, "DOWNLOAD");
+        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);
+        printf("Fichier sera envoyé depuis: %s\n", filepath);
     } else {
         printf("Opération non reconnue: %s\n", operation);
         return -1;
@@ -128,7 +147,7 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     // Envoi d'une commande TCP au client pour l'informer qu'une connexion TCP va être établie
     char tcpResponse[BUFFER_MAX];
     snprintf(tcpResponse, sizeof(tcpResponse), "TCP:%s:%s:%s", clientOperation, 
-             filename, inet_ntoa(client->sin_addr));
+             baseName, inet_ntoa(client->sin_addr));
     
     socklen_t len = sizeof(*client);
     if (sendto(sockfd, tcpResponse, strlen(tcpResponse), 0, (const struct sockaddr*)client, len) < 0) {
@@ -150,26 +169,26 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     int clientTCP = connexionTCP(socketTCP);
     if (clientTCP < 0)  {
         printf("Échec connexion TCP avec le client\n");
-        closeServer(socketTCP, clientTCP); // Pass the appropriate second argument based on the function definition
+        closeServer(socketTCP, -1);
         return -1;
     }
     
     int result;
     if (strcmp(operation, "@upload") == 0) {
         // Client upload = serveur reçoit
-        printf("Réception du fichier %s en cours...\n", filename);
-        result = receiveFile(clientTCP, filename);
+        printf("Réception du fichier %s en cours...\n", filepath);
+        result = receiveFile(clientTCP, filepath);
         if (result == 0) {
-            printf("Fichier reçu avec succès\n");
+            printf("Fichier reçu avec succès dans %s\n", filepath);
         } else {
             printf("Erreur lors de la réception du fichier (code %d)\n", result);
         }
     } else if (strcmp(operation, "@download") == 0) {
         // Client download = serveur envoie
-        printf("Envoi du fichier %s en cours...\n", filename);
-        result = sendFile(clientTCP, filename);
+        printf("Envoi du fichier %s en cours...\n", filepath);
+        result = sendFile(clientTCP, filepath);
         if (result == 0) {
-            printf("Fichier envoyé avec succès\n");
+            printf("Fichier envoyé avec succès depuis %s\n", filepath);
         } else {
             printf("Erreur lors de l'envoi du fichier (code %d)\n", result);
         }
@@ -178,7 +197,11 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     // Fermer les connexions TCP
     closeServer(socketTCP, clientTCP);
 
-    return 1;
+    if (result == 0) {
+        return 1;
+    } else {
+        return -1;
+    }
 }
 int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
