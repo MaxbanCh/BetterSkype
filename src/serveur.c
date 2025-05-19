@@ -58,13 +58,18 @@ int initSocket(void) {
 // Fonction qui reçoit un message depuis un client UDP
 ssize_t recvMessage(int sockfd, char *buffer, size_t buflen, struct sockaddr_in *cli) {
     socklen_t len = sizeof(*cli);  // longueur de l'adresse client
+    ssize_t result;
     ssize_t r = recvfrom(sockfd, buffer, buflen - 1, 0, (struct sockaddr*)cli, &len); // réception
     if (r < 0) {
         perror("recvfrom");
-        return -1;
+        result = -1;
     }
-    buffer[r] = '\0'; 
-    return r;         
+    else{
+        buffer[r] = '\0'; 
+        result = r;  
+    }
+    return result;
+          
 }
 
 void printMessage(const MessageInfo *m) {
@@ -388,7 +393,7 @@ int main(void) {
                     inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
                     
                     
-                   const char *shutdownMsg = "Le serveur va s'arrêter. Veuillez redémarrer votre client plus tard.\n";
+                   const char *shutdownMsg = "Le serveur va s'arrêter. Vous allez être déconnecté.\n";
                     
                     // Envoi avec vérification
                     if (sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 

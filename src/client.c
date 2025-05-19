@@ -74,7 +74,7 @@ void debugConnexion(int res)
 ssize_t sendMessage(int dS, struct sockaddr_in *adServer, char *message)
 {
     socklen_t lgA = sizeof(struct sockaddr_in);
-    return sendto(dS, message, 1024, 0, (struct sockaddr *)adServer, lgA);
+    return sendto(dS, message, strlen(message), 0, (struct sockaddr *)adServer, lgA);
 }
 
 // Fonction de debug d'envoi d'un message

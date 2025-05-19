@@ -89,44 +89,48 @@ int pingCmd(const char *payload, const struct sockaddr_in *client,
 int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
     char pseudo[PSEUDO_MAX];
     char password[64];
+    int result = 0; // Variable de retour finale
     
     // Extraire le pseudo et le mot de passe du payload
     // Format: "@register pseudo password"
     if (sscanf(payload, "@register %s %s", pseudo, password) != 2) {
         snprintf(response, response_size, "Format invalide. Utilisez: @register <pseudo> <password>");
-        return 0;
     }
-    
-    // Vérifier si l'utilisateur existe déjà
-    int auth_result = authenticateClient(pseudo, "");
-    if (auth_result == 1 || auth_result == -1) {
-        snprintf(response, response_size, "Le pseudo %s est déjà utilisé", pseudo);
-        return 0; // L'utilisateur existe déjà
-    }
-
-    // Ajouter le nouvel utilisateur au fichier
-    FILE *file = fopen(USERS_FILE, "a");
-    if (!file) {
-        file = fopen(USERS_FILE, "w"); // Créer s'il n'existe pas
-        if (!file) {
-            perror("Impossible de créer le fichier utilisateurs");
-            snprintf(response, response_size, "Erreur serveur lors de la création du fichier utilisateurs");
-            return 0;
+    else {
+        // Vérifier si l'utilisateur existe déjà
+        int auth_result = authenticateClient(pseudo, "");
+        if (auth_result == 1 || auth_result == -1) {
+            snprintf(response, response_size, "Le pseudo %s est déjà utilisé", pseudo);
+        }
+        else {
+            // Ajouter le nouvel utilisateur au fichier
+            FILE *file = fopen(USERS_FILE, "a");
+            if (!file) {
+                file = fopen(USERS_FILE, "w"); // Créer s'il n'existe pas
+            }
+            
+            if (!file) {
+                perror("Impossible de créer le fichier utilisateurs");
+                snprintf(response, response_size, "Erreur serveur lors de la création du fichier utilisateurs");
+            }
+            else {
+                // Dans une implémentation réelle, on hasherait le mot de passe ici
+                fprintf(file, "%s,%s\n", pseudo, password);
+                fclose(file);
+                
+                // Associer l'utilisateur à son adresse IP et port
+                if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
+                    snprintf(response, response_size, "Utilisateur %s enregistré et connecté avec succès", pseudo);
+                    result = 1; // Succès
+                }
+                else {
+                    snprintf(response, response_size, "Utilisateur %s enregistré mais erreur lors de la connexion", pseudo);
+                }
+            }
         }
     }
-
-    // Dans une implémentation réelle, on hasherait le mot de passe ici
-    fprintf(file, "%s,%s\n", pseudo, password);
-    fclose(file);
     
-    // Associer l'utilisateur à son adresse IP et port
-    if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
-        snprintf(response, response_size, "Utilisateur %s enregistré et connecté avec succès", pseudo);
-        return 1;
-    } else {
-        snprintf(response, response_size, "Utilisateur %s enregistré mais erreur lors de la connexion", pseudo);
-        return 0;
-    }
+    return result;
 }
 
 // Traitement de la commande @connect
