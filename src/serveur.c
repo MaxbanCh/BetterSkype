@@ -19,10 +19,18 @@
 #include "user.h"
 #include "command.h"
 #include "dependencies/TCPFile.h"       
-
+#include <pthread.h>  // Ajouté pour gérer les threads
 
 int serverRunning = 1;
-int sockfd; // // Socket globale pour pouvoir la fermer avec ctrl+c
+int sockfd; // Socket globale pour pouvoir la fermer avec ctrl+c
+
+// Structure pour passer les paramètres au thread de transfert
+typedef struct {
+    char *operation;
+    char *filename;
+    struct sockaddr_in client;
+    int socketTCP;
+} FileTransferParams;
 
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
 static void handleSigint(int sig) {
@@ -69,7 +77,6 @@ ssize_t recvMessage(int sockfd, char *buffer, size_t buflen, struct sockaddr_in 
         result = r;  
     }
     return result;
-          
 }
 
 void printMessage(const MessageInfo *m) {
@@ -79,13 +86,89 @@ void printMessage(const MessageInfo *m) {
     printf("Contenu             : %s\n\n", m->payload);
 }
 
-// Fonction qui envoie un accusé de réception à l’expéditeur du message
+// Fonction qui envoie un accusé de réception à l'expéditeur du message
 void sendAcR(int sockfd, const struct sockaddr_in *cli) {
     const char *acR = "OK"; 
     socklen_t len = sizeof(*cli);
     if (sendto(sockfd, acR, strlen(acR), 0, (const struct sockaddr*)cli, len) < 0) {
         perror("sendto"); 
     }
+}
+
+// Fonction exécutée dans un thread pour gérer un transfert de fichier
+void *fileTransferThreadServer(void *arg) {
+    FileTransferParams *params = (FileTransferParams *)arg;
+    int result = -1;
+    char filepath[512] = {0};
+    
+    // Extraire le nom de base du fichier sans chemin
+    const char *baseName = strrchr(params->filename, '/');
+    if (baseName) {
+        baseName++; // Passer après le '/'
+    } else {
+        baseName = strrchr(params->filename, '\\');
+        if (baseName) {
+            baseName++; // Passer après le '\'
+        } else {
+            baseName = params->filename; // Pas de séparateur trouvé
+        }
+    }
+    
+    printf("Thread #%ld: En attente d'une connexion TCP...\n", pthread_self());
+    
+    // Attendre la connexion du client
+    int clientTCP = connexionTCP(params->socketTCP);
+    if (clientTCP < 0)  {
+        printf("Thread #%ld: Échec connexion TCP avec le client\n", pthread_self());
+        closeServer(params->socketTCP, -1);
+        free(params->operation);
+        free(params->filename);
+        free(params);
+        pthread_exit(NULL);
+    }
+    
+    printf("Thread #%ld: Client connecté depuis %s:%d\n", 
+           pthread_self(),
+           inet_ntoa(params->client.sin_addr),
+           ntohs(params->client.sin_port));
+    
+    // Déterminer l'opération et construire le chemin approprié
+    if (strcmp(params->operation, "@upload") == 0) {
+        // Le client veut uploader, le serveur va recevoir dans files/send
+        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);
+        printf("Thread #%ld: Réception du fichier %s en cours...\n", pthread_self(), filepath);
+        
+        // Réception du fichier
+        result = receiveFile(clientTCP, filepath);
+        if (result == 0) {
+            printf("Thread #%ld: Fichier reçu avec succès dans %s\n", pthread_self(), filepath);
+        } else {
+            printf("Thread #%ld: Erreur lors de la réception du fichier (code %d)\n", pthread_self(), result);
+        }
+    } 
+    else if (strcmp(params->operation, "@download") == 0) {
+        // Le client veut télécharger, le serveur va envoyer depuis files/send
+        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);
+        printf("Thread #%ld: Envoi du fichier %s en cours...\n", pthread_self(), filepath);
+        
+        // Envoi du fichier
+        result = sendFile(clientTCP, filepath);
+        if (result == 0) {
+            printf("Thread #%ld: Fichier envoyé avec succès depuis %s\n", pthread_self(), filepath);
+        } else {
+            printf("Thread #%ld: Erreur lors de l'envoi du fichier (code %d)\n", pthread_self(), result);
+        }
+    }
+    
+    // Fermer les connexions TCP
+    closeServer(params->socketTCP, clientTCP);
+    
+    // Libérer la mémoire allouée
+    free(params->operation);
+    free(params->filename);
+    free(params);
+    
+    pthread_exit(NULL);
 }
 
 int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr_in *client) {
@@ -97,7 +180,6 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     command[sizeof(command) - 1] = '\0';
     
     char *operation, *filename;
-    char filepath[512];  // Pour stocker le chemin complet
     
     // Extraire les informations du message
     operation = strtok(command, " ");
@@ -129,10 +211,12 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     
     // Déterminer l'opération et construire le chemin approprié
     char clientOperation[10];
+    char filepath[512];  // Pour stocker le chemin complet
+    
     if (strcmp(operation, "@upload") == 0) {
         // Le client veut uploader, le serveur va recevoir dans files/send
         strcpy(clientOperation, "UPLOAD");
-        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);  // CHANGÉ DE receive À send
+        snprintf(filepath, sizeof(filepath), "files/send/%s", baseName);
         printf("Fichier sera reçu dans: %s\n", filepath);
     } else if (strcmp(operation, "@download") == 0) {
         // Le client veut télécharger, le serveur va envoyer depuis files/send
@@ -157,7 +241,7 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     
     printf("Commande TCP envoyée: %s\n", tcpResponse);
     
-    // Initialiser le mode serveur TCP et attendre une connexion
+    // Initialiser le mode serveur TCP 
     printf("Démarrage du serveur TCP...\n");
     int socketTCP = initTCPSocketServer();
     if (socketTCP < 0) {
@@ -165,48 +249,40 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
         return -1;
     }
     
-    printf("En attente d'une connexion TCP...\n");
-    int clientTCP = connexionTCP(socketTCP);
-    if (clientTCP < 0)  {
-        printf("Échec connexion TCP avec le client\n");
+    // Préparer les paramètres pour le thread de transfert
+    FileTransferParams *params = malloc(sizeof(FileTransferParams));
+    if (!params) {
+        perror("Allocation mémoire pour les paramètres");
         closeServer(socketTCP, -1);
         return -1;
     }
     
-    int result;
-    if (strcmp(operation, "@upload") == 0) {
-        // Client upload = serveur reçoit
-        printf("Réception du fichier %s en cours...\n", filepath);
-        result = receiveFile(clientTCP, filepath);
-        if (result == 0) {
-            printf("Fichier reçu avec succès dans %s\n", filepath);
-        } else {
-            printf("Erreur lors de la réception du fichier (code %d)\n", result);
-        }
-    } else if (strcmp(operation, "@download") == 0) {
-        // Client download = serveur envoie
-        printf("Envoi du fichier %s en cours...\n", filepath);
-        result = sendFile(clientTCP, filepath);
-        if (result == 0) {
-            printf("Fichier envoyé avec succès depuis %s\n", filepath);
-        } else {
-            printf("Erreur lors de l'envoi du fichier (code %d)\n", result);
-        }
-    }
+    params->operation = strdup(operation);
+    params->filename = strdup(filename);
+    memcpy(&params->client, client, sizeof(struct sockaddr_in));
+    params->socketTCP = socketTCP;
     
-    // Fermer les connexions TCP
-    closeServer(socketTCP, clientTCP);
-
-    if (result == 0) {
-        return 1;
-    } else {
+    // Créer un thread pour gérer le transfert
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, fileTransferThreadServer, params) != 0) {
+        perror("Échec création thread");
+        free(params->operation);
+        free(params->filename);
+        free(params);
+        closeServer(socketTCP, -1);
         return -1;
     }
+    
+    // Détacher le thread pour qu'il se libère automatiquement à la fin
+    pthread_detach(thread);
+    
+    return 1;  // Succès - traitement en cours dans le thread
 }
+
 int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
-    int  sockfd         = initSocket();
+    sockfd = initSocket();
     User activeUsers[MAX_USERS];
     int  numActiveUsers = 0;
     char buffer[BUFFER_MAX];
@@ -311,7 +387,7 @@ int main(void) {
                 continue;
             }
             
-            // @help, @ping, @credits, @shutdown, @upload, @download
+            // @help, @ping, @credits, @shutdown
             case cmdHelp:
                 status = helpCmd(msg.payload, 
                                 &client, 
@@ -327,7 +403,7 @@ int main(void) {
                                 response, 
                                 sizeof(response), 
                                 activeUsers, 
-                                numActiveUsers);;
+                                numActiveUsers);
                 break;
             
             case cmdCredits:
@@ -337,7 +413,6 @@ int main(void) {
                                     sizeof(response),
                                     activeUsers,
                                     numActiveUsers);
-
                 break;
 
             case cmdShutdown:
@@ -347,10 +422,10 @@ int main(void) {
                                     sizeof(response),
                                     activeUsers,
                                     numActiveUsers);
-
                 break;
             
             case cmdUpload:
+                // Utiliser directement handleFileTransfer pour les uploads
                 status = uploadCmd(msg.payload, 
                                 &client, 
                                 response, 
@@ -358,12 +433,13 @@ int main(void) {
                                 activeUsers, 
                                 numActiveUsers);
                 if (status == 3) {
-                    // Initialiser le transfert de fichier
-                    handleFileTransfer(&msg, sockfd, &client);
+                    // Initialiser le transfert de fichier avec threads
+                    status = handleFileTransfer(&msg, sockfd, &client);
                 }
                 break;
 
             case cmdDownload:
+                // Utiliser directement handleFileTransfer pour les downloads
                 status = downloadCmd(msg.payload, 
                                 &client, 
                                 response, 
@@ -371,8 +447,8 @@ int main(void) {
                                 activeUsers, 
                                 numActiveUsers);
                 if (status == 4) {
-                    // Initialiser le transfert de fichier
-                    handleFileTransfer(&msg, sockfd, &client);
+                    // Initialiser le transfert de fichier avec threads
+                    status = handleFileTransfer(&msg, sockfd, &client);
                 }
                 break;
             
@@ -404,8 +480,8 @@ int main(void) {
                 }
                 continue;
             }
-
         }
+        
         // 3) pour toutes les autres commandes, on envoie la réponse ici
         if (status >= 0) {
             sendto(sockfd,
@@ -429,8 +505,7 @@ int main(void) {
                     };
                     inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
                     
-                    
-                   const char *shutdownMsg = "Le serveur va s'arrêter. Vous allez être déconnecté.\n";
+                    const char *shutdownMsg = "Le serveur va s'arrêter. Vous allez être déconnecté.\n";
                     
                     // Envoi avec vérification
                     if (sendto(sockfd, shutdownMsg, strlen(shutdownMsg), 0, 
@@ -439,8 +514,6 @@ int main(void) {
                     } else {
                         printf("Message d'arrêt envoyé à %s\n", activeUsers[i].pseudo);
                     }
-                    
-                    
                 }
             }
         
