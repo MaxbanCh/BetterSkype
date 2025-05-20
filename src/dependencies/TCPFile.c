@@ -160,8 +160,22 @@ int receiveFile(int socket, char *file)
     size_t bytesReceived;
     long fileSize;
     int ret;
+    char ack = 'A'; // A pour ACK
 
     int flag = 0;
+
+    // Vérifier si c'est un message d'erreur avec MSG_PEEK
+    char errorCheck[15];
+    ret = recv(socket, errorCheck, 6, MSG_PEEK);
+    if (ret == 6 && strcmp(errorCheck, "ERROR:") == 0) {
+        // C'est un message d'erreur, lire le message complet
+        char errorFull[100];
+        memset(errorFull, 0, sizeof(errorFull));
+        recv(socket, errorFull, sizeof(errorFull)-1, 0);
+        printf("Message d'erreur du client: %s\n", errorFull);
+        flag = -10;  // Code spécial pour les erreurs client
+        return flag;
+    }
 
     // 1. Recevoir la taille du fichier
     ret = recv(socket, &fileSize, sizeof(fileSize), 0);
@@ -171,19 +185,23 @@ int receiveFile(int socket, char *file)
     }
 
     // Ouvrir le fichier en mode écriture binaire
-    fp = fopen(file, "wb");
-    if (fp == NULL && flag == 0) {
-        perror("Erreur lors de l'ouverture du fichier");
-        flag = -2;
+    // N'ouvrir le fichier que si tout est bon jusqu'ici
+    if (flag == 0) {
+        fp = fopen(file, "wb");
+        if (fp == NULL) {
+            perror("Erreur lors de l'ouverture du fichier");
+            flag = -2;
+        }
     }
-
+    
     // 2. Envoyer l'accusé de réception (ACK)
-    char ack = 'A';
-    ret = send(socket, &ack, 1, 0);
-    if (ret < 0 && flag == 0) {
-        perror("Erreur lors de l'envoi de l'accusé de réception");
-        fclose(fp);
-        flag = -3;
+    if (flag == 0) {
+        ret = send(socket, &ack, 1, 0);
+        if (ret < 0) {
+            perror("Erreur lors de l'envoi de l'accusé de réception");
+            fclose(fp);
+            flag = -3;
+        }
     }
 
     // 3. Recevoir le contenu du fichier par blocs
@@ -207,8 +225,9 @@ int receiveFile(int socket, char *file)
             flag = -5;
         }
     }
-
-    fclose(fp);
+    if (fp != NULL) {
+        fclose(fp);
+    }
     return flag;  // Succès
 }
 

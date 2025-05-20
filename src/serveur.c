@@ -140,7 +140,9 @@ void *fileTransferThreadServer(void *arg) {
         
         // Réception du fichier
         result = receiveFile(clientTCP, filepath);
-        if (result == 0) {
+        if (result == -10) {
+            printf("Thread #%ld: Erreur lors de la réception du fichier (message d'erreur du client)\n", pthread_self());
+        }else if (result == 0) {
             printf("Thread #%ld: Fichier reçu avec succès dans %s\n", pthread_self(), filepath);
         } else {
             printf("Thread #%ld: Erreur lors de la réception du fichier (code %d)\n", pthread_self(), result);
