@@ -19,7 +19,11 @@
 #include "user.h"
 #include "command.h"
 #include "dependencies/TCPFile.h"       
+<<<<<<< HEAD
 #include <pthread.h>  // Ajouté pour gérer les threads
+=======
+#include <pthread.h>
+>>>>>>> 821c9544fda382087e81b00e7574e44b9d083821
 
 int serverRunning = 1;
 int sockfd; // Socket globale pour pouvoir la fermer avec ctrl+c
@@ -243,15 +247,22 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     
     printf("Commande TCP envoyée: %s\n", tcpResponse);
     
+<<<<<<< HEAD
     // Initialiser le mode serveur TCP 
     printf("Démarrage du serveur TCP...\n");
+=======
+    // Initialiser le mode serveur TCP et attendre une connexion
+>>>>>>> 821c9544fda382087e81b00e7574e44b9d083821
     int socketTCP = initTCPSocketServer();
     if (socketTCP < 0) {
         printf("Échec initialisation serveur TCP\n");
         return -1;
     }
+<<<<<<< HEAD
     
     // Préparer les paramètres pour le thread de transfert
+=======
+>>>>>>> 821c9544fda382087e81b00e7574e44b9d083821
     FileTransferParams *params = malloc(sizeof(FileTransferParams));
     if (!params) {
         perror("Allocation mémoire pour les paramètres");
@@ -268,8 +279,11 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     pthread_t thread;
     if (pthread_create(&thread, NULL, fileTransferThreadServer, params) != 0) {
         perror("Échec création thread");
+<<<<<<< HEAD
         free(params->operation);
         free(params->filename);
+=======
+>>>>>>> 821c9544fda382087e81b00e7574e44b9d083821
         free(params);
         closeServer(socketTCP, -1);
         return -1;
@@ -277,10 +291,17 @@ int handleFileTransfer(const MessageInfo *msg, int sockfd, const struct sockaddr
     
     // Détacher le thread pour qu'il se libère automatiquement à la fin
     pthread_detach(thread);
+<<<<<<< HEAD
     
     return 1;  // Succès - traitement en cours dans le thread
 }
 
+=======
+    return 1;
+}
+
+
+>>>>>>> 821c9544fda382087e81b00e7574e44b9d083821
 int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
