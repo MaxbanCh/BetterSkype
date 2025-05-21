@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -20,10 +21,28 @@
 #define SERVER_PORT 12345
 
 int clientRunning = 1; 
+char connectedUsername[PSEUDO_MAX] = {0};
+int globalSocket = -1;  // Socket globale pour la déconnexion
+struct sockaddr_in *globalServer; // Adresse serveur globale
 
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
+
+     // Envoyer une demande de déconnexion si un utilisateur est connecté
+    if (connectedUsername[0] != '\0' && globalSocket >= 0 && globalServer != NULL) {
+        // Construire la commande de déconnexion avec le nom d'utilisateur
+        char disconnectCmd[100];
+        snprintf(disconnectCmd, sizeof(disconnectCmd), "@disconnect %s", connectedUsername);
+        
+        // Créer et envoyer le message
+        char *message = createMessage(SERVER_IP, "", disconnectCmd);
+        sendMessage(globalSocket, globalServer, message);
+        free(message);
+        
+        // Donner au serveur un peu de temps pour traiter la déconnexion
+        usleep(100000);  // 100ms
+    }
     clientRunning = 0;
     exit(EXIT_SUCCESS);
 }
@@ -244,6 +263,10 @@ int main(void) {
 
     struct sockaddr_in *adServer = adServ(SERVER_PORT);
 
+    // Stocker les références globales pour le gestionnaire SIGINT
+    globalSocket = dS;
+    globalServer = adServer;
+
     if ( connection(dS, SERVER_IP, adServer) != 0 ) {
         debugConnexion(-1);
         exit(EXIT_FAILURE);         // Cas d'erreur lors de la connexion
@@ -281,6 +304,24 @@ int main(void) {
                 write(STDOUT_FILENO, "\n> ", 3);
             }
             else {
+                // Capturer le nom d'utilisateur lors d'une connexion réussie
+                if (strncmp(buf, "Connecté en tant que ", 21) == 0) {
+                    // Extraire le nom d'utilisateur
+                    strncpy(connectedUsername, buf + 21, PSEUDO_MAX - 1);
+                    connectedUsername[PSEUDO_MAX - 1] = '\0';
+                    
+                    // Nettoyer la fin de chaîne (espaces et retour à la ligne)
+                    int len = strlen(connectedUsername);
+                    while (len > 0 && (isspace(connectedUsername[len-1]) || connectedUsername[len-1] == '\n')) {
+                        connectedUsername[--len] = '\0';
+                    }
+                    
+                    
+                }
+                // Détecter la déconnexion manuelle
+                else if (strncmp(buf, "Déconnecté", 10) == 0) {
+                    memset(connectedUsername, 0, PSEUDO_MAX);
+                }
                 write(STDOUT_FILENO, "\n", 1);
                 write(STDOUT_FILENO, buf, r);
                 write(STDOUT_FILENO, "\n> ", 3);

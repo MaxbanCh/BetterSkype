@@ -37,7 +37,7 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
 int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
 
 // Traite la commande @disconnect
-int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
+extern int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
 
 // Traite la commande @msg pour envoyer un message privé
 int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
