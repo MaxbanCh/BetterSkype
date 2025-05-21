@@ -76,8 +76,6 @@ void debugConnexion(int res)
         printf("BIENVENUE SUR BETTERSKYPE !!!!!!\n");
     else
         printf("Ohhhh nonnnnn, il semble qu'il y'a une erreur\n");
-
-    return ;
 }
 
 /* Fonction d'envoi d'un message
@@ -96,8 +94,6 @@ void debugSendMessage(ssize_t snd)
 {
     if (snd == -1)
         perror("Erreur envoi msg : ");
-
-    return ;
 }
 
 // Structure pour passer les paramètres au thread de transfert
@@ -251,7 +247,7 @@ void handleTCPFileTransfer(char *buffer) {
         }
     }
     // Détacher le thread pour qu'il se libère automatiquement à la fin
-    if(flag){
+    if (flag){
         pthread_detach(thread);
     }
 }
