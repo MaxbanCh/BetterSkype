@@ -21,7 +21,6 @@
 #define SERVER_PORT 12345
 
 int clientRunning = 1; 
-char connectedUsername[PSEUDO_MAX] = {0};
 int globalSocket = -1;  // Socket globale pour la déconnexion
 struct sockaddr_in *globalServer; // Adresse serveur globale
 
@@ -29,14 +28,10 @@ static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
 
-     // Envoyer une demande de déconnexion si un utilisateur est connecté
-    if (connectedUsername[0] != '\0' && globalSocket >= 0 && globalServer != NULL) {
-        // Construire la commande de déconnexion avec le nom d'utilisateur
-        char disconnectCmd[100];
-        snprintf(disconnectCmd, sizeof(disconnectCmd), "@disconnect %s", connectedUsername);
-        
-        // Créer et envoyer le message
-        char *message = createMessage(SERVER_IP, "", disconnectCmd);
+     // Envoyer une demande de déconnexion si nous avons une socket valide
+    if (globalSocket >= 0 && globalServer != NULL) {
+        // Envoyer simplement @disconnect comme pour la commande manuelle
+        char *message = createMessage(SERVER_IP, "", "@disconnect");
         sendMessage(globalSocket, globalServer, message);
         free(message);
         
@@ -304,24 +299,6 @@ int main(void) {
                 write(STDOUT_FILENO, "\n> ", 3);
             }
             else {
-                // Capturer le nom d'utilisateur lors d'une connexion réussie
-                if (strncmp(buf, "Connecté en tant que ", 21) == 0) {
-                    // Extraire le nom d'utilisateur
-                    strncpy(connectedUsername, buf + 21, PSEUDO_MAX - 1);
-                    connectedUsername[PSEUDO_MAX - 1] = '\0';
-                    
-                    // Nettoyer la fin de chaîne (espaces et retour à la ligne)
-                    int len = strlen(connectedUsername);
-                    while (len > 0 && (isspace(connectedUsername[len-1]) || connectedUsername[len-1] == '\n')) {
-                        connectedUsername[--len] = '\0';
-                    }
-                    
-                    
-                }
-                // Détecter la déconnexion manuelle
-                else if (strncmp(buf, "Déconnecté", 10) == 0) {
-                    memset(connectedUsername, 0, PSEUDO_MAX);
-                }
                 write(STDOUT_FILENO, "\n", 1);
                 write(STDOUT_FILENO, buf, r);
                 write(STDOUT_FILENO, "\n> ", 3);
