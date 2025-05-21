@@ -12,10 +12,10 @@ make
 
 ## Utilisation Serveur -
 ```bash
-/bin/serveur
+./bin/serveur
 ```
 
 ## Utilisation Client -
 ```bash
-/bin/client
+./bin/client
 ```

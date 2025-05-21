@@ -6,24 +6,38 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <pthread.h>  // Ajout pour gérer les threads
 #include "message.h"
 #include "header.h"
 #include "client.h"
-#include "dependencies/TCPFile.h"  // Ajout de l'inclusion
-
+#include "dependencies/TCPFile.h"
 
 // ------  Variables globales ------
 #define SERVER_IP   "127.0.0.1"         
 #define SERVER_PORT 12345
 
 int clientRunning = 1; 
+int globalSocket = -1;  // Socket globale pour la déconnexion
+struct sockaddr_in *globalServer; // Adresse serveur globale
 
 static void handleSigint(int sig) {
     (void)sig;
     printf("\nArrêt client\n");
+
+     // Envoyer une demande de déconnexion si nous avons une socket valide
+    if (globalSocket >= 0 && globalServer != NULL) {
+        // Envoyer simplement @disconnect comme pour la commande manuelle
+        char *message = createMessage(SERVER_IP, "", "@disconnect");
+        sendMessage(globalSocket, globalServer, message);
+        free(message);
+        
+        // Donner au serveur un peu de temps pour traiter la déconnexion
+        usleep(100000);  // 100ms
+    }
     clientRunning = 0;
     exit(EXIT_SUCCESS);
 }
@@ -62,8 +76,6 @@ void debugConnexion(int res)
         printf("BIENVENUE SUR BETTERSKYPE !!!!!!\n");
     else
         printf("Ohhhh nonnnnn, il semble qu'il y'a une erreur\n");
-
-    return ;
 }
 
 /* Fonction d'envoi d'un message
@@ -74,7 +86,7 @@ void debugConnexion(int res)
 ssize_t sendMessage(int dS, struct sockaddr_in *adServer, char *message)
 {
     socklen_t lgA = sizeof(struct sockaddr_in);
-    return sendto(dS, message, 1024, 0, (struct sockaddr *)adServer, lgA);
+    return sendto(dS, message, strlen(message), 0, (struct sockaddr *)adServer, lgA);
 }
 
 // Fonction de debug d'envoi d'un message
@@ -82,144 +94,165 @@ void debugSendMessage(ssize_t snd)
 {
     if (snd == -1)
         perror("Erreur envoi msg : ");
-
-    return ;
 }
-
-#include <pthread.h>  // Ajoutez cette inclusion pour gérer les threads
 
 // Structure pour passer les paramètres au thread de transfert
 typedef struct {
     char operation[16];
     char filename[256];
     char serverIP[64];
+    char baseName[256];
 } FileTransferThreadParams;
 
 // Fonction exécutée par le thread pour gérer le transfert de fichier
 void *fileTransferThread(void *arg) {
     FileTransferThreadParams *params = (FileTransferThreadParams *)arg;
-
+    int result = -1;
+    char fullPath[512] = {0};
+    
+    // Construire le chemin complet selon l'opération
     if (strcmp(params->operation, "UPLOAD") == 0) {
-        // Vérifier si le fichier existe avant d'essayer de l'ouvrir
-        FILE *testFile = fopen(params->filename, "rb");
-        if (testFile == NULL) {
-            char error[320];
-            sprintf(error, "\nErreur : Le fichier '%s' n'existe pas ou n'est pas accessible\n> ", 
-                    params->filename);
-            write(STDOUT_FILENO, error, strlen(error));
+        snprintf(fullPath, sizeof(fullPath), "files/send/%s", params->baseName);
+        
+        // Vérifier que le fichier existe avant de l'envoyer
+        FILE *testFile = fopen(fullPath, "r");
+        if (!testFile) {
+            char errorMsg[512];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "\nErreur: Le fichier %s n'existe pas dans le dossier files/send/\n> ", 
+                    params->baseName);
+            write(STDOUT_FILENO, errorMsg, strlen(errorMsg));
+            
+            int socketTCP = initTCPSocketClient(params->serverIP);
+            if (socketTCP >= 0) {
+                // Envoyer message d'erreur au serveur
+                char errorNotification[256] = "ERROR:FILE_NOT_FOUND";
+                send(socketTCP, errorNotification, strlen(errorNotification), 0);
+                closeClient(socketTCP);
+            }
+            
             free(params);
             pthread_exit(NULL);
         }
+        
         fclose(testFile);
-    }
-
-    int socketTCP = initTCPSocketClient(params->serverIP);
-    if (socketTCP < 0) {
-        write(STDOUT_FILENO, "\nÉchec connexion TCP\n> ", 25);
-        free(params);
-        pthread_exit(NULL);
-    }
-    
-    int result;
-    if (strcmp(params->operation, "UPLOAD") == 0) {
-        // Envoyer le fichier
-        write(STDOUT_FILENO, "\nEnvoi du fichier en cours...\n", 30);
-        result = sendFile(socketTCP, params->filename);
-        if (result == 0) {
-            write(STDOUT_FILENO, "\nFichier envoyé avec succès\n> ", 31);
-        } else {
-            char error[50];
-            sprintf(error, "\nErreur lors de l'envoi du fichier (code %d)\n> ", result);
-            write(STDOUT_FILENO, error, strlen(error));
+        
+        // Établir connexion TCP et envoyer le fichier
+        int socketTCP = initTCPSocketClient(params->serverIP);
+        if (socketTCP < 0) {
+            write(STDOUT_FILENO, "\nErreur de connexion TCP\n> ", 28);
+            free(params);
+            pthread_exit(NULL);
         }
+        
+        write(STDOUT_FILENO, "\nEnvoi du fichier en cours...\n", 30);
+        result = sendFile(socketTCP, fullPath);
+        
+        if (result == 0) {
+            char successMsg[512];
+            snprintf(successMsg, sizeof(successMsg), 
+                    "\nFichier %s envoyé avec succès depuis files/send/\n> ", params->baseName);
+            write(STDOUT_FILENO, successMsg, strlen(successMsg));
+        } else {
+            char errorMsg[512];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "\nErreur lors de l'opération fichier (code: %d)\n> ", result);
+            write(STDOUT_FILENO, errorMsg, strlen(errorMsg));
+        }
+        
+        closeClient(socketTCP);
     } 
     else if (strcmp(params->operation, "DOWNLOAD") == 0) {
-        // Recevoir le fichier
-        write(STDOUT_FILENO, "\nRéception du fichier en cours...\n", 34);
-        result = receiveFile(socketTCP, params->filename);
-        if (result == 0) {
-            write(STDOUT_FILENO, "\nFichier reçu avec succès\n> ", 30);
-        } else {
-            char error[60];
-            sprintf(error, "\nErreur lors de la réception du fichier (code %d)\n> ", result);
-            write(STDOUT_FILENO, error, strlen(error));
+        snprintf(fullPath, sizeof(fullPath), "files/receive/%s", params->baseName);
+        
+        // Établir connexion TCP et recevoir le fichier
+        int socketTCP = initTCPSocketClient(params->serverIP);
+        if (socketTCP < 0) {
+            write(STDOUT_FILENO, "\nErreur de connexion TCP\n> ", 28);
+            free(params);
+            pthread_exit(NULL);
         }
+        
+        write(STDOUT_FILENO, "\nRéception du fichier en cours...\n", 34);
+        result = receiveFile(socketTCP, fullPath);
+        
+        if (result == 0) {
+            char successMsg[512];
+            snprintf(successMsg, sizeof(successMsg), 
+                    "\nFichier %s reçu avec succès dans files/receive/\n> ", params->baseName);
+            write(STDOUT_FILENO, successMsg, strlen(successMsg));
+        } else {
+            char errorMsg[512];
+            snprintf(errorMsg, sizeof(errorMsg), 
+                    "\nErreur lors de l'opération fichier (code: %d)\n> ", result);
+            write(STDOUT_FILENO, errorMsg, strlen(errorMsg));
+        }
+        
+        closeClient(socketTCP);
     }
     
-    // Fermer la connexion TCP
-    closeClient(socketTCP);
     free(params);
     pthread_exit(NULL);
 }
 
-// Modifier la fonction handleTCPFileTransfer pour créer un thread
+// Fonction qui gère les transferts de fichiers via TCP (version avec thread)
 void handleTCPFileTransfer(char *buffer) {
-    // Format attendu: "TCP:<operation>:<fichier>:<ip_serveur>"
-    // où operation est soit "UPLOAD" soit "DOWNLOAD"
-    
-    char *operation, *filename, *serverIP;
-    
-    // Extraire les informations du message
-    operation = strtok(buffer + 4, ":");  // +4 pour sauter "TCP:"
-    if (!operation) {
-        write(STDOUT_FILENO, "\nFormat TCP invalide\n> ", 24);
-        return;
-    }
-    
-    filename = strtok(NULL, ":");
-    if (!filename) {
-        write(STDOUT_FILENO, "\nNom de fichier manquant\n> ", 28);
-        return;
-    }
-    
-    serverIP = strtok(NULL, ":");
-    if (!serverIP) {
-        // Si l'IP n'est pas spécifiée, utiliser celle par défaut
-        serverIP = SERVER_IP;
-    }
-    
-    write(STDOUT_FILENO, "\nInitialisation transfert TCP...\n", 33);
 
-    if (strcmp(operation, "UPLOAD") == 0) {
-        FILE *testFile = fopen(filename, "rb");
-        if (testFile == NULL) {
-            char error[100];
-            sprintf(error, "\nErreur : Le fichier '%s' n'existe pas ou n'est pas accessible\n> ", 
-                    filename);
-            write(STDOUT_FILENO, error, strlen(error));
-            return;
-        }
-        fclose(testFile);
-    }
-    
-    // Allouer les paramètres pour le thread
+    int flag = 1; // 1 = continuer, 0 = ne pas continuer
+    // Extraire les informations de la commande TCP reçue
+    char operation[32], filename[256], ip[INET_ADDRSTRLEN];
+    memset(operation, 0, sizeof(operation));
+    memset(filename, 0, sizeof(filename));
+    memset(ip, 0, sizeof(ip));
+
+    pthread_t thread; // Créer un thread pour gérer le transfert
+    const char *baseName ;
     FileTransferThreadParams *params = malloc(sizeof(FileTransferThreadParams));
-    if (!params) {
-        write(STDOUT_FILENO, "\nErreur d'allocation mémoire\n> ", 32);
-        return;
+    
+    if (sscanf(buffer, "TCP:%31[^:]:%255[^:]:%46s", operation, filename, ip) != 3) {
+        write(STDOUT_FILENO, "\nFormat de commande TCP invalide\n> ", 35);
+        flag = 0;
     }
     
-    // Copier les paramètres
-    strncpy(params->operation, operation, sizeof(params->operation) - 1);
-    strncpy(params->filename, filename, sizeof(params->filename) - 1);
-    strncpy(params->serverIP, serverIP, sizeof(params->serverIP) - 1);
-
-    
-    
-    // Créer un thread pour gérer le transfert
-    pthread_t thread;
-    if (pthread_create(&thread, NULL, fileTransferThread, params) != 0) {
-        write(STDOUT_FILENO, "\nÉchec création thread\n> ", 27);
-        free(params);
-        return;
+    // Extraire le nom de base du fichier (sans chemin)
+    if (flag){
+        baseName = strrchr(filename, '/');
+        if (baseName) {
+            baseName++; // Passer après le '/'
+        } else {
+            baseName = strrchr(filename, '\\');
+            if (baseName) {
+                baseName++; // Passer après le '\'
+            } else {
+                baseName = filename;
+            }
+        }
+        
+        if (!params) {
+            write(STDOUT_FILENO, "\nErreur d'allocation mémoire\n> ", 32);
+            flag = 0;
+        }
     }
-    
+    if (flag){
+        strncpy(params->operation, operation, sizeof(params->operation) - 1);
+        strncpy(params->filename, filename, sizeof(params->filename) - 1);
+        strncpy(params->serverIP, ip, sizeof(params->serverIP) - 1);
+        strncpy(params->baseName, baseName, sizeof(params->baseName) - 1);
+        
+        
+        if (pthread_create(&thread, NULL, fileTransferThread, params) != 0) {
+            write(STDOUT_FILENO, "\nÉchec création thread de transfert\n> ", 40);
+            free(params);
+            flag = 0;
+        }
+    }
     // Détacher le thread pour qu'il se libère automatiquement à la fin
-    pthread_detach(thread);
+    if (flag){
+        pthread_detach(thread);
+    }
 }
 
 int main(void) {
-    
     int dS = createSocket();
     if (dS < 0) {
         perror("socket");
@@ -227,6 +260,10 @@ int main(void) {
     }
 
     struct sockaddr_in *adServer = adServ(SERVER_PORT);
+
+    // Stocker les références globales pour le gestionnaire SIGINT
+    globalSocket = dS;
+    globalServer = adServer;
 
     if ( connection(dS, SERVER_IP, adServer) != 0 ) {
         debugConnexion(-1);
@@ -260,12 +297,15 @@ int main(void) {
             else if (strncmp(buf, "TCP", 3) == 0) {
                 handleTCPFileTransfer(buf);
             }
+            else if (strncmp(buf, "FILES:", 6) == 0) {
+                // On ignore les messages FILES: pour éviter leur affichage
+                write(STDOUT_FILENO, "\n> ", 3);
+            }
             else {
                 write(STDOUT_FILENO, "\n", 1);
                 write(STDOUT_FILENO, buf, r);
                 write(STDOUT_FILENO, "\n> ", 3);
             }
-
         }
     } else {
         // ── Processus parent : envoi bloquant via read() ──
@@ -292,7 +332,6 @@ int main(void) {
             ssize_t s = sendMessage(dS, adServer, message);
             debugSendMessage(s);
             free(message);
-
         }
 
         kill(pid, SIGTERM);
