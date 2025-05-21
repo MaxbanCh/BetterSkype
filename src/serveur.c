@@ -20,6 +20,7 @@
 #include "command.h"
 #include "dependencies/TCPFile.h"       
 #include <pthread.h>
+#include "salon.h"
 
 int serverRunning = 1;
 int sockfd; // // Socket globale pour pouvoir la fermer avec ctrl+c
@@ -175,6 +176,11 @@ int main(void) {
     char buffer[BUFFER_MAX];
     struct sockaddr_in client;
 
+    salonList *salons = createSalonList();
+    Salon *acceuil = createSalon("accueil", "admin");
+    printf("Salon %s créé\n", acceuil->name);
+    addSalon(salons, acceuil);
+
     while (serverRunning) {
         if (recvMessage(sockfd, buffer, sizeof(buffer), &client) < 0)
             continue;
@@ -199,7 +205,8 @@ int main(void) {
                                     response,
                                     sizeof(response),
                                     activeUsers,
-                                    &numActiveUsers);
+                                    &numActiveUsers,
+                                    acceuil);
                 break;
 
             case cmdDisconnect:
@@ -324,8 +331,34 @@ int main(void) {
                                      sockfd,
                                      &client);
                 break;
-            
+            // case cmdSalon:
+            //     status = salonCmd(msg.payload,
+            //                       &client,
+            //                       response,
+            //                       sizeof(response),
+            //                       salons);
+            //     break;
+            case cmdJoin:
+                status = joinCmd(msg.payload,
+                                &client,
+                                response,
+                                sizeof(response),
+                                salons,
+                                activeUsers,
+                                numActiveUsers);
+                break;
+            case cmdLeave:
+                status = leaveCmd(msg.payload,
+                                &client,
+                                response,
+                                sizeof(response),
+                                salons,
+                                activeUsers,
+                                numActiveUsers);
+                break;
+                
             default: {
+                printf("Oui: %s\n", msg.payload);
                 int authenticated = 0;
                 char client_ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &client.sin_addr, client_ip, INET_ADDRSTRLEN);
@@ -341,6 +374,43 @@ int main(void) {
 
                 if (authenticated) {
                     sendAcR(sockfd, &client);
+                    // Envoyer un message à tous les utilisateurs dans le salon de l'expéditeur
+                    userList *salonUsers;
+                    if (sendMessageSalon(msg.payload, 
+                                    &client, 
+                                    response, 
+                                    sizeof(response), 
+                                    salons, 
+                                    activeUsers, 
+                                    numActiveUsers,
+                                    &salonUsers) > 0) {
+                        
+                        printf("reponse a envoyer : %s\n", response);
+                        // Parcourir la liste des utilisateurs du salon et envoyer le message à chacun
+                        UserNode *current = salonUsers->head;
+                        printf("Envoi du message au salon %s\n", current->user);
+                        while (current != NULL) {
+                            printf("Envoi du message au salon %s à %s\n", current->user, response);
+                            // Pour chaque utilisateur du salon, trouver son adresse et envoyer le message
+                            for (int i = 0; i < numActiveUsers; i++) {
+                                if (strcmp(activeUsers[i].pseudo, current->user) == 0 && 
+                                    activeUsers[i].isConnected) {
+                                    struct sockaddr_in dest = {
+                                        .sin_family = AF_INET,
+                                        .sin_port = htons(activeUsers[i].port)
+                                    };
+                                    inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
+                                    
+                                    // Envoyer le message formaté
+                                    sendto(sockfd, response, strlen(response), 0, 
+                                        (struct sockaddr*)&dest, sizeof(dest));
+                                    
+                                    printf("Message salon envoyé à %s\n", activeUsers[i].pseudo);
+                                }
+                            }
+                            current = current->next;
+                        }
+                    }
                 } else {
                     const char *auth_req =
                         "Veuillez vous authentifier avec '@connect login mdp'";
@@ -352,8 +422,7 @@ int main(void) {
                         sizeof(client));
                 }
                 continue;
-            }
-
+        }
         }
         // 3) pour toutes les autres commandes, on envoie la réponse ici
         if (status >= 0) {
@@ -402,3 +471,4 @@ int main(void) {
 
     return EXIT_SUCCESS;
 }
+

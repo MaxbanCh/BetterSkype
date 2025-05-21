@@ -5,10 +5,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include "user.h"
 #include "salon.h"
-#include "message.h"
-#include "userList.h"
 
 #define SALON_DIR "salon"
 
@@ -18,48 +15,56 @@
     *var user : utilisateur qui a cree le salon
 
 */
-Salon *createSalon(char *name, User *user) {
+Salon *createSalon(char *name, char *user) {
+    Salon *salon = (Salon *)malloc(sizeof(Salon));
+    salon->name = strdup(name);
+    salon->admin = user;
+    salon->users = createUserList();
+
+    int res = addUser(salon->users, user);
+    if (res != 0)
+    {
+        printf("pb");
+    }
+
+    printf("Salon '%s' créé avec succès par %s.\n", name, user);
+
     // Créer le répertoire du salon
     char filepath[256];
     snprintf(filepath, sizeof(filepath), "%s/%s.csv", SALON_DIR, name);
     
     // Vérifier si le salon existe déjà
     if (access(filepath, F_OK) != -1) {
-        printf("Le salon '%s' existe déjà.\n", name);
-        return;
-    }
-    
-    // Créer le fichier CSV
-    FILE *file = fopen(filepath, "w");
-    if (!file) {
-        perror("Erreur lors de la création du fichier salon");
-        return;
-    }
-    
-    // Obtenir la date et l'heure actuelles
-    time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
-    char date_str[30];
-    strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", tm_info);
-    
-    // Écrire la première ligne indiquant la création
-    fprintf(file, "%s,@created@,%s\n", user->pseudo, date_str);
-    
-    // Fermer le fichier
-    fclose(file);
-    
-    Salon *salon = malloc(sizeof(Salon));
-    salon->name = strdup(name);
-    salon->admin = user;
-    salon->users = createUserList();
+        printf("Le fichier salon '%s' existe déjà.\n", name);
 
-    salon->users = addUser(salon->users, user);
+        return salon;
+    }
+    else {
+        
+        // Créer le fichier CSV
+        FILE *file = fopen(filepath, "w");
+        if (!file) {
+            perror("Erreur lors de la création du fichier salon");
+            return salon;
+        }
+        
+        // Obtenir la date et l'heure actuelles
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&now);
+        char date_str[30];
+        strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", tm_info);
+        
+        // Écrire la première ligne indiquant la création
+        fprintf(file, "%s,@created@,%s\n", user, date_str);
+        
+        // Fermer le fichier
+        fclose(file);
 
-    printf("Salon '%s' créé avec succès par %s.\n", name, user->pseudo);
-    return salon;
+        return salon;
+    }
 }
 
-int joinSalon(Salon *salon, User *user) {
+int joinSalon(Salon *salon, char *user) {
     char *name = salon->name;
     // Vérifier si le salon existe
     char filepath[256];
@@ -70,14 +75,16 @@ int joinSalon(Salon *salon, User *user) {
         return -1;
     }
     
+    printf("Le salon '%s' existe.\n", name);
     // verifier si l'utilisateur est deja dans le salon
-    if (isUserInList(salon->users, user->pseudo)) {
-        printf("%s est déjà dans le salon '%s'.\n", user->pseudo, name);
+    if (isUserInList(salon->users, user)) {
+        printf("%s est déjà dans le salon '%s'.\n", user, name);
         return -1;
     }
 
+    printf("%s n'est pas dans le salon '%s'.\n", user, name);
     // Ajouter l'utilisateur au salon
-    salon->users = addUser(salon->users, user);
+    int res = addUser(salon->users, user);
     if (salon->users == NULL) {
         printf("Erreur lors de l'ajout de l'utilisateur au salon.\n");
         return -1;
@@ -96,16 +103,16 @@ int joinSalon(Salon *salon, User *user) {
     strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", tm_info);
     
     // Écrire la ligne d'entrée de l'utilisateur
-    fprintf(file, "%s,@joined@,%s\n", user->pseudo, date_str);
+    fprintf(file, "%s,@joined@,%s\n", user, date_str);
     
     // Fermer le fichier
     fclose(file);
     
-    printf("%s a rejoint le salon '%s'.\n", user->pseudo, name);
+    printf("%s a rejoint le salon '%s'.\n", user, name);
     return 0;
 }
 
-int leaveSalon(Salon *salon, User *user) {
+int leaveSalon(Salon *salon, char *user) {
     char *name = salon->name;
     // Vérifier si le salon existe
     char filepath[256];
@@ -129,23 +136,23 @@ int leaveSalon(Salon *salon, User *user) {
     strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", tm_info);
     
     // Écrire la ligne de sortie de l'utilisateur
-    fprintf(file, "%s,@left@,%s\n", user->pseudo, date_str);
+    fprintf(file, "%s,@left@,%s\n", user, date_str);
     
     // Fermer le fichier
     fclose(file);
 
     // Supprimer l'utilisateur du salon
-    salon->users = removeUser(salon->users, user->pseudo);
+    salon->users = removeUser(salon->users, user);
     if (salon->users == NULL) {
         printf("Erreur lors de la suppression de l'utilisateur du salon.\n");
         return -1;
     }
     
-    printf("%s a quitté le salon '%s'.\n", user->pseudo, name);
+    printf("%s a quitté le salon '%s'.\n", user, name);
     return 0;
 }
 
-int broadcastMessage(Salon *salon, MessageInfo *message, char *username, char *response) {
+int broadcastMessage(Salon *salon, char *message, char *username, char *response, userList *users) {
     char *name = salon->name;
     // Vérifier si le salon existe
     char filepath[256];
@@ -168,7 +175,7 @@ int broadcastMessage(Salon *salon, MessageInfo *message, char *username, char *r
     strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", tm_info);
     
     // Écrire la ligne de sortie de l'utilisateur
-    fprintf(file, "%s,%s,%s\n", username, message->payload, date_str);
+    fprintf(file, "%s,%s,%s\n", username, message, date_str);
     
     // Fermer le fichier
     fclose(file);
@@ -186,21 +193,7 @@ int broadcastMessage(Salon *salon, MessageInfo *message, char *username, char *r
 }
 
 
-
-
 ////////////////////////////////////
-
-struct salonNode_s {
-    Salon *salon;
-    struct salonNode_s *next;
-};
-typedef struct salonNode_s salonNode;
-
-struct salonList_s {
-    struct salonNode_s *head;
-    struct salonNode_s *tail;
-};
-typedef struct salonList_s salonList;
 
 salonList *createSalonList() {
     salonList *list = malloc(sizeof(salonList));
@@ -210,6 +203,7 @@ salonList *createSalonList() {
     }
     list->head = NULL;
     list->tail = NULL;
+    list->size = 0;
     return list;
 }
 
@@ -240,13 +234,17 @@ int addSalon(salonList *list, Salon *salon) {
         list->tail->next = newNode;
         list->tail = newNode;
     }
+    list->size++;
     return 0;
 }
 
 Salon *findSalon(salonList *list, const char *name) {
     salonNode *current = list->head;
     while (current != NULL) {
+        // Comparer le nom du salon avec le nom recherché
+        printf("Comparaison de %s avec %s\n", current->salon->name, name);
         if (strcmp(current->salon->name, name) == 0) {
+            printf("Salon trouvé: %s\n", current->salon->name);
             return current->salon;
         }
         current = current->next;
@@ -267,6 +265,10 @@ int removeSalon(salonList *list, const char *name) {
             }
             free(current->salon);
             free(current);
+            list->size--;
+            if (list->size == 0) {
+                list->tail = NULL;
+            }
             return 0; // Salon supprimé
         }
         previous = current;
@@ -274,4 +276,3 @@ int removeSalon(salonList *list, const char *name) {
     }
     return -1; // Salon non trouvé
 }
-

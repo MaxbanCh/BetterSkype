@@ -2,7 +2,9 @@
 #include "command.h"
 #include <stdio.h>
 #include <header.h>
-#include "salon.h"
+#include "userList.h"
+#include <stdlib.h>
+
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
@@ -48,10 +50,23 @@ CommandType getCommandType(const char *payload)
     else if (strncmp(payload, "@download",  9) == 0) {
         cmdType = cmdDownload;
     }
+    // else if (strncmp(payload, "@salon", 6) == 0) {
+    //     cmdType = cmdSalon;
+    // }
+    else if (strncmp(payload, "@list", 5) == 0) {
+        cmdType = cmdList;
+    }
+    else if (strncmp(payload, "@join", 5) == 0) {
+        cmdType = cmdJoin;
+    }
+    else if (strncmp(payload, "@leave", 6) == 0) {
+        cmdType = cmdLeave;
+    }
 
     return cmdType;
 }
 
+// Modified getUserwithIp function
 char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr_in *client) {
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
@@ -59,7 +74,13 @@ char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr
     
     // Check if user is connected
     int isConnected = 0;
-    char userName[PSEUDO_MAX] = "Anonyme";
+    char *userName = malloc(PSEUDO_MAX); // Dynamically allocate memory
+    if (!userName) {
+        perror("Memory allocation failed");
+        return NULL;
+    }
+    
+    strcpy(userName, "Anonyme"); // Default value
     int i = 0;
     
     while (i < numActiveUsers && !isConnected) {
@@ -67,14 +88,14 @@ char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr
             activeUsers[i].port == client_port && 
             activeUsers[i].isConnected == 1) {
             isConnected = 1;
-            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX - 1);
+            userName[PSEUDO_MAX - 1] = '\0'; // Ensure null termination
         }
         i++;
     }
 
-    return userName;
+    return userName; // Now returns dynamically allocated memory that must be freed by the caller
 }
-
 
 int pingCmd(const char *payload, const struct sockaddr_in *client, 
            char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
@@ -137,9 +158,11 @@ int registerUser(const char *payload, const struct sockaddr_in *client, char *re
 }
 
 // Traitement de la commande @connect
-int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
+int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers, Salon *salon) {
     char pseudo[PSEUDO_MAX];
     char password[64];
+
+    printf("salon: %s\n", salon->name);
     
     // Extraction du login et mot de passe
     if (sscanf(payload, "@connect %s %s", pseudo, password) != 2) {
@@ -151,7 +174,7 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
     inet_ntop(AF_INET, &(client->sin_addr), clientIp, INET_ADDRSTRLEN);
     int clientPort = ntohs(client->sin_port);
     
-    
+    printf("Tentative de connexion de %s depuis %s:%d\n", pseudo, clientIp, clientPort);
     // Chercher si un utilisateur est déjà connecté depuis cette adresse
     for (int i = 0; i < *numActiveUsers; i++) {
         if (strcmp(activeUsers[i].ip, clientIp) == 0 && 
@@ -177,13 +200,22 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
         return 0;
     }
 
-    
+    printf("Tentative d'authentification de %s\n", pseudo);
     // Authentifier l'utilisateur
     int auth_result = authenticateClient(pseudo, password);
       if (auth_result == 1) {
         // Authentification réussie
         if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
             snprintf(response, response_size, "Connecté en tant que %s", pseudo);
+            printf("Utilisateur %s connecté avec succès\n", pseudo);
+            // Ajouter l'utilisateur au salon
+            if (joinSalon(salon, pseudo)){
+                printf("L'utilisateur %s a rejoint le salon %s\n", pseudo, salon->name);
+                snprintf(response, response_size, "Connecté et ajouté au salon %s", salon->name);
+            } else {
+                snprintf(response, response_size, "Connecté mais impossible d'ajouter au salon %s", salon->name);
+            }
+            
             return 1;
         } else {
             snprintf(response, response_size, "Erreur serveur: impossible d'ajouter l'utilisateur à la liste active");
@@ -482,7 +514,7 @@ int createSalonCmd(const char *payload, const struct sockaddr_in *client,
 }
 
 int joinCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, salonList *salons) {
+           char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers) {
     
     // Format attendu: "@join salon"
     char salonName[SALON_NAME_MAX];
@@ -498,11 +530,117 @@ int joinCmd(const char *payload, const struct sockaddr_in *client,
         return 0;
     }
 
-    int result = joinSalon(salon, client);
+    // Get username from client address
+    char *username = getUserwithIp(activeUsers, numActiveUsers, client);
+    if (username == NULL) {
+        snprintf(response, response_size, "Vous devez être connecté pour rejoindre un salon.");
+        return 0;
+    }
+
+    // Verifier si l'utilisateur n'est pas deja dans un autre salon
+    salonNode *salonN = salons->head;
+    while (salonN != NULL) {
+        if (isUserInList(salonN->salon->users, username)) {
+            snprintf(response, response_size, "Vous êtes déjà dans le salon %s.", salonN->salon->name);
+            return 0;
+        }
+        salonN = salonN->next;
+    }
+    
+    // Join the salon with the username
+    int result = joinSalon(salon, username);
     if (result == 0) {
         snprintf(response, response_size, "Vous avez rejoint le salon %s.", salonName);
     } else {
         snprintf(response, response_size, "Erreur lors de la connexion au salon %s.", salonName);
     }
+    return result;
+}
+
+int sendMessageSalon(const char *payload, const struct sockaddr_in *client, 
+                   char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers,
+                   userList **users) {
+    
+    // Format attendu: "@msg message"
+    char message[BUFFER_MAX];
+
+    int findUser = 0;
+    int i = 0;
+    salonNode *salonN = salons->head;
+    
+    // Recherche du salon de l'utilisateur
+    char *username = getUserwithIp(activeUsers, numActiveUsers, client);
+    if (username == NULL) {
+        snprintf(response, response_size, "Vous devez être connecté pour envoyer un message.");
+        return 0;
+    }
+    
+    while (findUser == 0 && salonN != NULL) {
+        if (isUserInList(salonN->salon->users, username)) {
+            findUser = 1;
+        }
+        else {
+            salonN = salonN->next;
+        }
+    }
+
+    Salon *salon = salonN->salon;
+
+    if (findUser == 0) {
+        snprintf(response, response_size, "Vous devez être dans un salon pour envoyer un message.");
+        return 0;
+    }
+    
+    printf("Tentative d'envoi de message dans le salon %s\n", salon->name);
+    printf("payload: %s\n", payload);
+
+    // Formater le message: "expediteur : message"
+    snprintf(response, response_size, "%s : %s", username, payload);
+    
+    // Copier la référence aux utilisateurs du salon pour que le serveur puisse l'utiliser
+    if (users != NULL) {
+        *users = salon->users;
+    }
+
+    printf("Message formaté: %s\n", response);
+    
+    // Enregistrer le message dans l'historique du salon (optionnel)
+    // broadcastMessage(salon, NULL, username, response, users);
+    
+    return 1; // Succès avec la liste des utilisateurs
+}
+
+int leaveCmd(const char *payload, const struct sockaddr_in *client, 
+           char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers) {
+    
+    // Format attendu: "@leave salon"
+    char salonName[SALON_NAME_MAX];
+    if (sscanf(payload, "@leave %s", salonName) != 1) {
+        snprintf(response, response_size, "Format invalide. Utilisez: @leave <salon>");
+        return 0;
+    }
+    
+    // Vérifier si le salon existe
+    Salon *salon = findSalon(salons, salonName);
+    if (!salon) {
+        snprintf(response, response_size, "Le salon %s n'existe pas.", salonName);
+        return 0;
+    }
+
+    // Get username from client address
+    char *username = getUserwithIp(activeUsers, numActiveUsers, client);
+    if (username == NULL) {
+        snprintf(response, response_size, "Vous devez être connecté pour quitter un salon.");
+        return 0;
+    }
+    
+    // Quitter le salon
+    int result = leaveSalon(salon, username);
+    if (result == 0) {
+        snprintf(response, response_size, "Vous avez quitté le salon %s.", salonName);
+    } else {
+        snprintf(response, response_size, "Erreur lors de la sortie du salon %s.", salonName);
+    }
+    
     return result;
 }

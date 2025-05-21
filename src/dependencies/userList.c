@@ -4,26 +4,13 @@
 #include <string.h>
 #include <stdio.h>
 
-struct userNode_s {
-    User *user;
-    struct userNode_s *next;
-};
-typedef struct userNode_s UserNode;
-
-struct userList_s {
-    UserNode *head;
-    UserNode *tail;
-    int size;
-};
-typedef struct userList_s userList;
-
-
 userList *createUserList() {
-    userList *list = malloc(sizeof(userList));
+    userList *list = (userList *)malloc(sizeof(userList));
     if (list == NULL) {
         perror("Erreur d'allocation de mémoire pour la liste d'utilisateurs");
         return NULL;
     }
+
     list->head = NULL;
     list->tail = NULL;
     list->size = 0;
@@ -40,13 +27,18 @@ void freeUserList(userList *list) {
     free(list);
 }
 
-int addUser(userList *list, User *user) {
+int addUser(userList *list, char *user) {
     UserNode *newNode = malloc(sizeof(UserNode));
     if (newNode == NULL) {
         perror("Erreur d'allocation de mémoire pour le nouvel utilisateur");
         return -1;
     }
-    newNode->user = user;
+    newNode->user = strdup(user);  // Make a copy of the string
+    if (newNode->user == NULL) {
+        perror("Erreur d'allocation de mémoire pour le nom d'utilisateur");
+        free(newNode);
+        return -1;
+    }
     newNode->next = NULL;
 
     if (list->head == NULL) {
@@ -57,15 +49,18 @@ int addUser(userList *list, User *user) {
         list->tail = newNode;
     }
     list->size++;
+
+    printf("Utilisateur %s ajouté à la liste. Taille actuelle de la liste: %d\n", list->tail->user, list->size);
     return 0;
 }
+
 
 int removeUser(userList *list, const char *pseudo) {
     UserNode *current = list->head;
     UserNode *previous = NULL;
 
     while (current != NULL) {
-        if (strcmp(current->user->pseudo, pseudo) == 0) {
+        if (strcmp(current->user, pseudo) == 0) {
             if (previous == NULL) {
                 list->head = current->next;
             } else {
@@ -85,9 +80,13 @@ int removeUser(userList *list, const char *pseudo) {
     return -1; // Utilisateur non trouvé
 }
 int isUserInList(userList *list, const char *pseudo) {
+    printf("Recherche de l'utilisateur %s dans la liste\n", pseudo);
+    printf("Taille de la liste: %d\n", list->size);
+
     UserNode *current = list->head;
     while (current != NULL) {
-        if (strcmp(current->user->pseudo, pseudo) == 0) {
+        printf("Comparing %s with %s\n", current->user, pseudo);
+        if (strcmp(current->user, pseudo) == 0) {
             return 1; // Utilisateur trouvé
         }
         current = current->next;

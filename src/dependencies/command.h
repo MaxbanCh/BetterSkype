@@ -9,7 +9,10 @@
 #endif
 #include <stddef.h>
 #include <header.h>
-#include <stdio.h>  
+#include <stdio.h> 
+#include "salon.h"
+#include "userList.h"
+
 
 /// Toutes les commandes supportées
 typedef enum {
@@ -23,6 +26,10 @@ typedef enum {
     cmdShutdown,
     cmdUpload,
     cmdDownload,
+    cmdSalon,
+    cmdList,
+    cmdJoin,
+    cmdLeave,
     cmdUnknown
 } CommandType;
 
@@ -30,8 +37,10 @@ typedef enum {
 // Renvoie le type de commande détecté au début de payload.
 CommandType getCommandType(const char *payload);
 
+char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr_in *client);
+
 // Traite la commande @connect
-int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
+int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers, Salon *salon);
 
 // Fonction qui enregistre un nouvel utilisateur
 int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers);
@@ -50,4 +59,16 @@ int creditsCmd(const char *payload, const struct sockaddr_in *client, char *resp
 
 int shutdownCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
 
+int salonCmd(const char *payload, const struct sockaddr_in *client, 
+    char *response, size_t response_size, salonList *salons);
+
+int joinCmd(const char *payload, const struct sockaddr_in *client, 
+        char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers);
+
+int leaveCmd(const char *payload, const struct sockaddr_in *client, 
+            char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers);
+ 
+int sendMessageSalon(const char *payload, const struct sockaddr_in *client, 
+            char *response, size_t response_size, salonList *salons, 
+            User *activeUsers, int numActiveUsers, userList **users);
 #endif // COMMAND_H

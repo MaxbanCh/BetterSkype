@@ -1,10 +1,10 @@
-#include <user.h>
-#include "message.h"
-#include "userList.h" // Include the header file where userList is defined
+#ifndef SALON_H
+#define SALON_H
+#include "userList.h"
 
 struct salon_s {
     char *name;
-    User *admin;
+    char *admin;
     userList *users;
 };
 typedef struct salon_s Salon;
@@ -12,13 +12,11 @@ typedef struct salon_s Salon;
 #define SALON_DIR "salon"
 #define SALON_NAME_MAX 50
 
-Salon *createSalon(char *name, User *user);
+Salon *createSalon(char *name, char *user);
 
-int joinSalon(Salon *salon, User *user);
+int joinSalon(Salon *salon, char *user);
 
-int leaveSalon(Salon *salon, User *user);
-
-void listSalons(User *user);
+int leaveSalon(Salon *salon, char *user);
 
 
 //////////////////////////
@@ -32,6 +30,7 @@ typedef struct salonNode_s salonNode;
 struct salonList_s {
     struct salonNode_s *head;
     struct salonNode_s *tail;
+    int size;
 };
 typedef struct salonList_s salonList;
 
@@ -41,3 +40,5 @@ void freeSalonList(salonList *list);
 int addSalon(salonList *list, Salon *salon);
 Salon *findSalon(salonList *list, const char *name);
 int removeSalon(salonList *list, const char *name);
+
+#endif
