@@ -201,52 +201,59 @@ void *fileTransferThread(void *arg) {
 
 // Fonction qui gère les transferts de fichiers via TCP (version avec thread)
 void handleTCPFileTransfer(char *buffer) {
+
+    int flag = 1; // 1 = continuer, 0 = ne pas continuer
     // Extraire les informations de la commande TCP reçue
     char operation[32], filename[256], ip[INET_ADDRSTRLEN];
     memset(operation, 0, sizeof(operation));
     memset(filename, 0, sizeof(filename));
     memset(ip, 0, sizeof(ip));
+
+    pthread_t thread; // Créer un thread pour gérer le transfert
+    const char *baseName ;
+    FileTransferThreadParams *params = malloc(sizeof(FileTransferThreadParams));
     
     if (sscanf(buffer, "TCP:%31[^:]:%255[^:]:%46s", operation, filename, ip) != 3) {
         write(STDOUT_FILENO, "\nFormat de commande TCP invalide\n> ", 35);
-        return;
+        flag = 0;
     }
     
     // Extraire le nom de base du fichier (sans chemin)
-    const char *baseName = strrchr(filename, '/');
-    if (baseName) {
-        baseName++; // Passer après le '/'
-    } else {
-        baseName = strrchr(filename, '\\');
+    if (flag){
+        baseName = strrchr(filename, '/');
         if (baseName) {
-            baseName++; // Passer après le '\'
+            baseName++; // Passer après le '/'
         } else {
-            baseName = filename;
+            baseName = strrchr(filename, '\\');
+            if (baseName) {
+                baseName++; // Passer après le '\'
+            } else {
+                baseName = filename;
+            }
+        }
+        
+        if (!params) {
+            write(STDOUT_FILENO, "\nErreur d'allocation mémoire\n> ", 32);
+            flag = 0;
         }
     }
-    
-    // Allocation des paramètres pour le thread
-    FileTransferThreadParams *params = malloc(sizeof(FileTransferThreadParams));
-    if (!params) {
-        write(STDOUT_FILENO, "\nErreur d'allocation mémoire\n> ", 32);
-        return;
+    if (flag){
+        strncpy(params->operation, operation, sizeof(params->operation) - 1);
+        strncpy(params->filename, filename, sizeof(params->filename) - 1);
+        strncpy(params->serverIP, ip, sizeof(params->serverIP) - 1);
+        strncpy(params->baseName, baseName, sizeof(params->baseName) - 1);
+        
+        
+        if (pthread_create(&thread, NULL, fileTransferThread, params) != 0) {
+            write(STDOUT_FILENO, "\nÉchec création thread de transfert\n> ", 40);
+            free(params);
+            flag = 0;
+        }
     }
-    
-    strncpy(params->operation, operation, sizeof(params->operation) - 1);
-    strncpy(params->filename, filename, sizeof(params->filename) - 1);
-    strncpy(params->serverIP, ip, sizeof(params->serverIP) - 1);
-    strncpy(params->baseName, baseName, sizeof(params->baseName) - 1);
-    
-    // Créer un thread pour gérer le transfert
-    pthread_t thread;
-    if (pthread_create(&thread, NULL, fileTransferThread, params) != 0) {
-        write(STDOUT_FILENO, "\nÉchec création thread de transfert\n> ", 40);
-        free(params);
-        return;
-    }
-    
     // Détacher le thread pour qu'il se libère automatiquement à la fin
-    pthread_detach(thread);
+    if(flag){
+        pthread_detach(thread);
+    }
 }
 
 int main(void) {
