@@ -27,6 +27,7 @@ typedef enum {
     cmdUpload,
     cmdDownload,
     cmdSalon,
+    cmdCreate,
     cmdList,
     cmdJoin,
     cmdLeave,
@@ -59,8 +60,8 @@ int creditsCmd(const char *payload, const struct sockaddr_in *client, char *resp
 
 int shutdownCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
 
-int salonCmd(const char *payload, const struct sockaddr_in *client, 
-    char *response, size_t response_size, salonList *salons);
+int createSalonCmd(const char *payload, const struct sockaddr_in *client, 
+    char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers);
 
 int joinCmd(const char *payload, const struct sockaddr_in *client, 
         char *response, size_t response_size, salonList *salons, User *activeUsers, int numActiveUsers);

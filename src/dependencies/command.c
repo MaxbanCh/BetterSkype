@@ -53,6 +53,9 @@ CommandType getCommandType(const char *payload)
     // else if (strncmp(payload, "@salon", 6) == 0) {
     //     cmdType = cmdSalon;
     // }
+    else if (strncmp(payload, "@create", 7) == 0) {
+        cmdType = cmdCreate;
+    }
     else if (strncmp(payload, "@list", 5) == 0) {
         cmdType = cmdList;
     }
@@ -200,16 +203,14 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
         return 0;
     }
 
-    printf("Tentative d'authentification de %s\n", pseudo);
     // Authentifier l'utilisateur
     int auth_result = authenticateClient(pseudo, password);
       if (auth_result == 1) {
         // Authentification réussie
         if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
             snprintf(response, response_size, "Connecté en tant que %s", pseudo);
-            printf("Utilisateur %s connecté avec succès\n", pseudo);
             // Ajouter l'utilisateur au salon
-            if (joinSalon(salon, pseudo)){
+            if (joinSalon(salon, pseudo) == 0){
                 printf("L'utilisateur %s a rejoint le salon %s\n", pseudo, salon->name);
                 snprintf(response, response_size, "Connecté et ajouté au salon %s", salon->name);
             } else {
@@ -562,10 +563,8 @@ int sendMessageSalon(const char *payload, const struct sockaddr_in *client,
                    userList **users) {
     
     // Format attendu: "@msg message"
-    char message[BUFFER_MAX];
 
     int findUser = 0;
-    int i = 0;
     salonNode *salonN = salons->head;
     
     // Recherche du salon de l'utilisateur
@@ -584,15 +583,13 @@ int sendMessageSalon(const char *payload, const struct sockaddr_in *client,
         }
     }
 
-    Salon *salon = salonN->salon;
-
     if (findUser == 0) {
         snprintf(response, response_size, "Vous devez être dans un salon pour envoyer un message.");
         return 0;
     }
+
+    Salon *salon = salonN->salon;
     
-    printf("Tentative d'envoi de message dans le salon %s\n", salon->name);
-    printf("payload: %s\n", payload);
 
     // Formater le message: "expediteur : message"
     snprintf(response, response_size, "%s : %s", username, payload);
@@ -601,11 +598,9 @@ int sendMessageSalon(const char *payload, const struct sockaddr_in *client,
     if (users != NULL) {
         *users = salon->users;
     }
-
-    printf("Message formaté: %s\n", response);
     
     // Enregistrer le message dans l'historique du salon (optionnel)
-    // broadcastMessage(salon, NULL, username, response, users);
+    saveMessage(salon, payload, username);
     
     return 1; // Succès avec la liste des utilisateurs
 }

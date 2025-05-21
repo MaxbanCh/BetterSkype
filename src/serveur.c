@@ -331,6 +331,16 @@ int main(void) {
                                      sockfd,
                                      &client);
                 break;
+
+            case cmdCreate:
+                status = createSalonCmd(msg.payload,
+                                        &client,
+                                        response,
+                                        sizeof(response),
+                                        salons,
+                                        activeUsers,
+                                        numActiveUsers);
+                break;
             // case cmdSalon:
             //     status = salonCmd(msg.payload,
             //                       &client,
@@ -358,7 +368,6 @@ int main(void) {
                 break;
                 
             default: {
-                printf("Oui: %s\n", msg.payload);
                 int authenticated = 0;
                 char client_ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &client.sin_addr, client_ip, INET_ADDRSTRLEN);
@@ -385,12 +394,9 @@ int main(void) {
                                     numActiveUsers,
                                     &salonUsers) > 0) {
                         
-                        printf("reponse a envoyer : %s\n", response);
                         // Parcourir la liste des utilisateurs du salon et envoyer le message à chacun
                         UserNode *current = salonUsers->head;
-                        printf("Envoi du message au salon %s\n", current->user);
                         while (current != NULL) {
-                            printf("Envoi du message au salon %s à %s\n", current->user, response);
                             // Pour chaque utilisateur du salon, trouver son adresse et envoyer le message
                             for (int i = 0; i < numActiveUsers; i++) {
                                 if (strcmp(activeUsers[i].pseudo, current->user) == 0 && 

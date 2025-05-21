@@ -50,7 +50,6 @@ int addUser(userList *list, char *user) {
     }
     list->size++;
 
-    printf("Utilisateur %s ajouté à la liste. Taille actuelle de la liste: %d\n", list->tail->user, list->size);
     return 0;
 }
 
@@ -80,12 +79,8 @@ int removeUser(userList *list, const char *pseudo) {
     return -1; // Utilisateur non trouvé
 }
 int isUserInList(userList *list, const char *pseudo) {
-    printf("Recherche de l'utilisateur %s dans la liste\n", pseudo);
-    printf("Taille de la liste: %d\n", list->size);
-
     UserNode *current = list->head;
     while (current != NULL) {
-        printf("Comparing %s with %s\n", current->user, pseudo);
         if (strcmp(current->user, pseudo) == 0) {
             return 1; // Utilisateur trouvé
         }

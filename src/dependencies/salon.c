@@ -27,8 +27,6 @@ Salon *createSalon(char *name, char *user) {
         printf("pb");
     }
 
-    printf("Salon '%s' créé avec succès par %s.\n", name, user);
-
     // Créer le répertoire du salon
     char filepath[256];
     snprintf(filepath, sizeof(filepath), "%s/%s.csv", SALON_DIR, name);
@@ -75,14 +73,12 @@ int joinSalon(Salon *salon, char *user) {
         return -1;
     }
     
-    printf("Le salon '%s' existe.\n", name);
     // verifier si l'utilisateur est deja dans le salon
     if (isUserInList(salon->users, user)) {
         printf("%s est déjà dans le salon '%s'.\n", user, name);
         return -1;
     }
 
-    printf("%s n'est pas dans le salon '%s'.\n", user, name);
     // Ajouter l'utilisateur au salon
     int res = addUser(salon->users, user);
     if (salon->users == NULL) {
@@ -142,7 +138,11 @@ int leaveSalon(Salon *salon, char *user) {
     fclose(file);
 
     // Supprimer l'utilisateur du salon
-    salon->users = removeUser(salon->users, user);
+    int res = removeUser(salon->users, user);
+    if (res != 0) {
+        printf("Erreur lors de la suppression de l'utilisateur du salon.\n");
+        return -1;
+    }
     if (salon->users == NULL) {
         printf("Erreur lors de la suppression de l'utilisateur du salon.\n");
         return -1;
@@ -152,7 +152,7 @@ int leaveSalon(Salon *salon, char *user) {
     return 0;
 }
 
-int broadcastMessage(Salon *salon, char *message, char *username, char *response, userList *users) {
+int saveMessage(Salon *salon, char *message, char *username) {
     char *name = salon->name;
     // Vérifier si le salon existe
     char filepath[256];
@@ -179,17 +179,8 @@ int broadcastMessage(Salon *salon, char *message, char *username, char *response
     
     // Fermer le fichier
     fclose(file);
-
-    // Envoyer la réponse aux clients
-    for (int i = 0; i < salon->users->size; i++) {
-        UserNode *current = salon->users->head;
-        for (int j = 0; j < i; j++) {
-            current = current->next;
-        }
-        if (current != NULL) {
-            // Envoyer le message à l'utilisateur
-        }
-    }
+    
+    return 0;
 }
 
 
@@ -242,9 +233,7 @@ Salon *findSalon(salonList *list, const char *name) {
     salonNode *current = list->head;
     while (current != NULL) {
         // Comparer le nom du salon avec le nom recherché
-        printf("Comparaison de %s avec %s\n", current->salon->name, name);
         if (strcmp(current->salon->name, name) == 0) {
-            printf("Salon trouvé: %s\n", current->salon->name);
             return current->salon;
         }
         current = current->next;
