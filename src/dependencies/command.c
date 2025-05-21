@@ -53,7 +53,7 @@ CommandType getCommandType(const char *payload)
 
 
 int pingCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+           char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
     // Get client information
     char client_ip[INET_ADDRSTRLEN];
@@ -77,136 +77,149 @@ int pingCmd(const char *payload, const struct sockaddr_in *client,
     
     // Format a personalized response
     if (isConnected) {
-        snprintf(response, response_size, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
+        snprintf(response, responseSize, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
     } else {
-        snprintf(response, response_size, "Pong! Serveur en ligne. Vous n'êtes pas connecté.");
+        snprintf(response, responseSize, "Pong! Serveur en ligne. Vous n'êtes pas connecté.");
     }
     
     return 1; // Success - ping response created successfully
 }
 
 // Fonction d'enregistrement d'un nouvel utilisateur
-int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
+int registerUser(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int *numActiveUsers) {
     char pseudo[PSEUDO_MAX];
     char password[64];
+    memset(pseudo, 0, sizeof(pseudo));
+    memset(password, 0, sizeof(password));
+    memset(response, 0, responseSize);
+    int result = 0; // Variable de retour finale
     
     // Extraire le pseudo et le mot de passe du payload
     // Format: "@register pseudo password"
     if (sscanf(payload, "@register %s %s", pseudo, password) != 2) {
-        snprintf(response, response_size, "Format invalide. Utilisez: @register <pseudo> <password>");
-        return 0;
+        snprintf(response, responseSize, "Format invalide. Utilisez: @register <pseudo> <password>");
     }
-    
-    // Vérifier si l'utilisateur existe déjà
-    int auth_result = authenticateClient(pseudo, "");
-    if (auth_result == 1 || auth_result == -1) {
-        snprintf(response, response_size, "Le pseudo %s est déjà utilisé", pseudo);
-        return 0; // L'utilisateur existe déjà
-    }
-
-    // Ajouter le nouvel utilisateur au fichier
-    FILE *file = fopen(USERS_FILE, "a");
-    if (!file) {
-        file = fopen(USERS_FILE, "w"); // Créer s'il n'existe pas
-        if (!file) {
-            perror("Impossible de créer le fichier utilisateurs");
-            snprintf(response, response_size, "Erreur serveur lors de la création du fichier utilisateurs");
-            return 0;
+    else {
+        // Vérifier si l'utilisateur existe déjà
+        int authResult = authenticateClient(pseudo, "");
+        if (authResult == 1 || authResult == -1) {
+            snprintf(response, responseSize, "Le pseudo %s est déjà utilisé", pseudo);
+        }
+        else {
+            // Ajouter le nouvel utilisateur au fichier
+            FILE *file = fopen(USERS_FILE, "a");
+            if (!file) {
+                file = fopen(USERS_FILE, "w"); // Créer s'il n'existe pas
+            }
+            
+            if (!file) {
+                perror("Impossible de créer le fichier utilisateurs");
+                snprintf(response, responseSize, "Erreur serveur lors de la création du fichier utilisateurs");
+            }
+            else {
+                // Dans une implémentation réelle, on hasherait le mot de passe ici
+                fprintf(file, "%s,%s\n", pseudo, password);
+                fclose(file);
+                
+                // Associer l'utilisateur à son adresse IP et port
+                if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
+                    snprintf(response, responseSize, "Utilisateur %s enregistré et connecté avec succès", pseudo);
+                    result = 1; // Succès
+                }
+                else {
+                    snprintf(response, responseSize, "Utilisateur %s enregistré mais erreur lors de la connexion", pseudo);
+                }
+            }
         }
     }
-
-    // Dans une implémentation réelle, on hasherait le mot de passe ici
-    fprintf(file, "%s,%s\n", pseudo, password);
-    fclose(file);
     
-    // Associer l'utilisateur à son adresse IP et port
-    if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
-        snprintf(response, response_size, "Utilisateur %s enregistré et connecté avec succès", pseudo);
-        return 1;
-    } else {
-        snprintf(response, response_size, "Utilisateur %s enregistré mais erreur lors de la connexion", pseudo);
-        return 0;
-    }
+    return result;
 }
 
 // Traitement de la commande @connect
-int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers) {
+int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int *numActiveUsers) {
     char pseudo[PSEUDO_MAX];
     char password[64];
+    memset(pseudo, 0, sizeof(pseudo));
+    memset(password, 0, sizeof(password));
+    memset(response, 0, responseSize);
+    int result = 0; // Variable de retour finale
+    int continueProcessing = 1; // Variable pour contrôler le flux d'exécution
     
     // Extraction du login et mot de passe
     if (sscanf(payload, "@connect %s %s", pseudo, password) != 2) {
-        snprintf(response, response_size, "Format invalide. Utilisez: @connect login mdp");
-        return 0;
+        snprintf(response, responseSize, "Format invalide. Utilisez: @connect login mdp");
+        continueProcessing = 0;
     }
     
-    char clientIp[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(client->sin_addr), clientIp, INET_ADDRSTRLEN);
-    int clientPort = ntohs(client->sin_port);
-    
-    
-    // Chercher si un utilisateur est déjà connecté depuis cette adresse
-    for (int i = 0; i < *numActiveUsers; i++) {
-        if (strcmp(activeUsers[i].ip, clientIp) == 0 && 
-            activeUsers[i].port == clientPort && 
-            activeUsers[i].isConnected == 1) {
-            
-            // Si c'est le même utilisateur qui essaie de se reconnecter
-            if (strcmp(activeUsers[i].pseudo, pseudo) == 0) {
-                snprintf(response, response_size, "Vous êtes déjà connecté en tant que %s", pseudo);
-                return 0; // Empêcher la reconnexion inutile
+    if (continueProcessing) {
+        char clientIp[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(client->sin_addr), clientIp, INET_ADDRSTRLEN);
+        int clientPort = ntohs(client->sin_port);
+        
+        // Chercher si un utilisateur est déjà connecté depuis cette adresse
+        for (int i = 0; i < *numActiveUsers && continueProcessing; i++) {
+            if (strcmp(activeUsers[i].ip, clientIp) == 0 && 
+                activeUsers[i].port == clientPort && 
+                activeUsers[i].isConnected == 1) {
+                
+                // Si c'est le même utilisateur qui essaie de se reconnecter
+                if (strcmp(activeUsers[i].pseudo, pseudo) == 0) {
+                    snprintf(response, responseSize, "Vous êtes déjà connecté en tant que %s", pseudo);
+                    continueProcessing = 0;
+                }
+                
+                // Sinon, déconnecter l'utilisateur existant
+                else {
+                    printf("Déconnexion de %s (même client tente une nouvelle connexion)\n", 
+                           activeUsers[i].pseudo);
+                    activeUsers[i].isConnected = 0;
+                }
             }
-            
-            // Sinon, déconnecter l'utilisateur existant
-            printf("Déconnexion de %s (même client tente une nouvelle connexion)\n", 
-                   activeUsers[i].pseudo);
-            activeUsers[i].isConnected = 0;
         }
     }
     
     // Vérifier si l'utilisateur est déjà connecté depuis un autre client
-    if (isUserConnected(pseudo, activeUsers, *numActiveUsers)) {
-        snprintf(response, response_size, "L'utilisateur %s est déjà connecté depuis un autre terminal", pseudo);
-        return 0;
+    if (continueProcessing && isUserConnected(pseudo, activeUsers, *numActiveUsers)) {
+        snprintf(response, responseSize, "L'utilisateur %s est déjà connecté depuis un autre terminal", pseudo);
+        continueProcessing = 0;
     }
 
-    
     // Authentifier l'utilisateur
-    int auth_result = authenticateClient(pseudo, password);
-      if (auth_result == 1) {
-        // Authentification réussie
-        if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
-            snprintf(response, response_size, "Connecté en tant que %s", pseudo);
-            return 1;
-        } else {
-            snprintf(response, response_size, "Erreur serveur: impossible d'ajouter l'utilisateur à la liste active");
-            return 0;
-        }
-    } else if (auth_result == -1) {
-        // Mot de passe incorrect
-        snprintf(response, response_size, "Mot de passe invalide pour l'utilisateur %s", pseudo);
-        return 0;    } else {        
-        // L'utilisateur n'existe pas, l'enregistrer directement
-        // Créer un payload pour l'enregistrement
-        char register_payload[BUFFER_MAX];
-        snprintf(register_payload, sizeof(register_payload), "@register %s %s", pseudo, password);
+    if (continueProcessing) {
+        int authResult = authenticateClient(pseudo, password);
         
-        // Utiliser la nouvelle version de registerUser
-        if (registerUser(register_payload, client, response, response_size, activeUsers, numActiveUsers)) {
-            return 1; // L'utilisateur est déjà enregistré et connecté par registerUser
+        if (authResult == 1) {
+            // Authentification réussie
+            if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
+                snprintf(response, responseSize, "Connecté en tant que %s", pseudo);
+                result = 1;
+            } else {
+                snprintf(response, responseSize, "Erreur serveur: impossible d'ajouter l'utilisateur à la liste active");
+            }
+        } else if (authResult == -1) {
+            // Mot de passe incorrect
+            snprintf(response, responseSize, "Mot de passe invalide pour l'utilisateur %s", pseudo);
         } else {
-            // registerUser a déjà défini la réponse
-            return 0;
+            // L'utilisateur n'existe pas, l'enregistrer directement
+            char registerPayload[BUFFER_MAX];
+            snprintf(registerPayload, sizeof(registerPayload), "@register %s %s", pseudo, password);
+            
+            // Utiliser la nouvelle version de registerUser
+            result = registerUser(registerPayload, client, response, responseSize, activeUsers, numActiveUsers);
         }
     }
     
-    // Si on arrive ici, quelque chose d'inattendu s'est produit
-    snprintf(response, response_size, "Erreur inconnue lors de l'authentification");
-    return 0;
+    // Si on arrive ici sans résultat et sans message d'erreur spécifique
+    if (continueProcessing && result == 0 && response[0] == '\0') {
+        snprintf(response, responseSize, "Erreur inconnue lors de l'authentification");
+    }
+    
+    return result;
 }
 
 // Traite la commande @disconnect
-int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
     int client_port = ntohs(client->sin_port);
@@ -219,17 +232,17 @@ int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *r
             
             // Déconnecter l'utilisateur
             activeUsers[i].isConnected = 0;
-            snprintf(response, response_size, "Déconnecté: %s", activeUsers[i].pseudo);
+            snprintf(response, responseSize, "Déconnecté: %s", activeUsers[i].pseudo);
             return 1;
         }
     }
     
-    snprintf(response, response_size, "Vous n'êtes pas connecté");
+    snprintf(response, responseSize, "Vous n'êtes pas connecté");
     return 0;
 }
 
 int sendPrivateMsg(const char *payload, const struct sockaddr_in *senderClient, 
-                  char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+                  char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     // Variables pour suivre l'état de la fonction
     int senderIndex = -1;
     int destIndex = -1;
@@ -312,28 +325,28 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *senderClient,
     switch (state) {
         case FORMAT_MESSAGE:
             // Construire le message à envoyer
-            snprintf(response, response_size, "Message privé de %s: %s", 
+            snprintf(response, responseSize, "Message privé de %s: %s", 
                     activeUsers[senderIndex].pseudo, contentStart);
             break;
             
         case MSG_ERROR_NOT_CONNECTED:
-            snprintf(response, response_size, "Vous devez être connecté pour envoyer un message privé");
+            snprintf(response, responseSize, "Vous devez être connecté pour envoyer un message privé");
             break;
             
         case ERROR_INVALID_FORMAT:
-            snprintf(response, response_size, "Format invalide. Utilisez: @msg <destinataire> <message>");
+            snprintf(response, responseSize, "Format invalide. Utilisez: @msg <destinataire> <message>");
             break;
             
         case ERROR_MISSING_MESSAGE:
-            snprintf(response, response_size, "Message manquant. Utilisez: @msg <destinataire> <message>");
+            snprintf(response, responseSize, "Message manquant. Utilisez: @msg <destinataire> <message>");
             break;
             
         case ERROR_USER_NOT_FOUND:
-            snprintf(response, response_size, "Utilisateur %s non connecté ou inexistant", destPseudo);
+            snprintf(response, responseSize, "Utilisateur %s non connecté ou inexistant", destPseudo);
             break;
         
         default:
-            snprintf(response, response_size, "Erreur inconnue");
+            snprintf(response, responseSize, "Erreur inconnue");
             break;
     }
     
@@ -348,27 +361,27 @@ int sendPrivateMsg(const char *payload, const struct sockaddr_in *senderClient,
 }
 
 int helpCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+           char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
     // Ouvrir le fichier README.txt
     FILE *helpFile = fopen("README.txt", "r");
     
     // En cas d'erreur, afficher un message simple
     if (!helpFile) {
-        snprintf(response, response_size, "Erreur: impossible d'ouvrir le fichier d'aide.");
+        snprintf(response, responseSize, "Erreur: impossible d'ouvrir le fichier d'aide.");
     } else {
         // Lire le contenu du fichier
         size_t rd = 0;
-        size_t maxSize = response_size - 1; // Garder un octet pour le caractère nul
+        size_t maxSize = responseSize - 1; // Garder un octet pour le caractère nul
         
         rd = fread(response, 1, maxSize, helpFile);
         fclose(helpFile);
         
         // S'assurer que la chaîne se termine correctement
-        if (rd >= 0 && rd < response_size) {
+        if (rd >= 0 && rd < responseSize) {
             response[rd] = '\0';
         } else {
-            response[response_size - 1] = '\0';
+            response[responseSize - 1] = '\0';
         }
     }
     
@@ -376,27 +389,27 @@ int helpCmd(const char *payload, const struct sockaddr_in *client,
 }
 
 int creditsCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+           char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
     // Ouvrir le fichier Credits.txt
     FILE *creditsFile = fopen("Credits.txt", "r");
     
     // En cas d'erreur, afficher un message simple
     if (!creditsFile) {
-        snprintf(response, response_size, "Erreur: impossible d'ouvrir le fichier de crédits.");
+        snprintf(response, responseSize, "Erreur: impossible d'ouvrir le fichier de crédits.");
     } else {
         // Lire le contenu du fichier
         size_t rd = 0;
-        size_t maxSize = response_size - 1; // Garder un octet pour le caractère nul
+        size_t maxSize = responseSize - 1; // Garder un octet pour le caractère nul
         
         rd = fread(response, 1, maxSize, creditsFile);
         fclose(creditsFile);
         
         // S'assurer que la chaîne se termine correctement
-        if (rd >= 0 && rd < response_size) {
+        if (rd >= 0 && rd < responseSize) {
             response[rd] = '\0';
         } else {
-            response[response_size - 1] = '\0';
+            response[responseSize - 1] = '\0';
         }
     }
     
@@ -404,7 +417,7 @@ int creditsCmd(const char *payload, const struct sockaddr_in *client,
 }
 
 int shutdownCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+           char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
     int result = 0;
     char client_ip[INET_ADDRSTRLEN];
@@ -428,13 +441,177 @@ int shutdownCmd(const char *payload, const struct sockaddr_in *client,
     }
     
     if (!isConnected) {
-        snprintf(response, response_size, "Vous devez être connecté pour arrêter le serveur.");
+        snprintf(response, responseSize, "Vous devez être connecté pour arrêter le serveur.");
     } else if (!isAdmin) {
-        snprintf(response, response_size, "Vous n'avez pas les droits administrateur pour arrêter le serveur.");
+        snprintf(response, responseSize, "Vous n'avez pas les droits administrateur pour arrêter le serveur.");
     } else {
-        snprintf(response, response_size, "Arrêt du serveur demandé par %s (admin). Le serveur va s'éteindre...", userName);
+        snprintf(response, responseSize, "Arrêt du serveur demandé par %s (admin). Le serveur va s'éteindre...", userName);
         result = 2;
     }
+    
+    return result;
+}
+
+// Traite la commande @upload
+// Traite la commande @upload
+int uploadCmd(const char *payload, const struct sockaddr_in *client, 
+             char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
+    
+    int result = 0;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    // Vérifier que l'utilisateur est connecté
+    int isConnected = 0;
+    char userName[PSEUDO_MAX];
+    memset(userName, 0, sizeof(userName));
+
+    // Plus tard dans le code, avant d'utiliser userName:
+    if (userName[0] == '\0') {
+        // Utilisateur non identifié
+        snprintf(response, responseSize, "Vous devez être connecté pour cette action.");
+    } else {
+        // Utilisateur identifié
+        snprintf(response, responseSize, "Action effectuée par %s", userName);
+    }
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    if (!isConnected) {
+        snprintf(response, responseSize, "Vous devez être connecté pour envoyer un fichier.");
+        return result;
+    }
+    
+    // Extraire le nom du fichier
+    char filename[256];
+    char baseName[256]; // Pour stocker seulement le nom du fichier sans chemin
+    memset(filename, 0, sizeof(filename));
+    memset(baseName, 0, sizeof(baseName));
+    
+    if (sscanf(payload, "@upload %255s", filename) != 1) {
+        snprintf(response, responseSize, "Format invalide. Utilisez: @upload <nom_fichier>");
+        return result;
+    }
+    
+    // Extraire le nom de base du fichier (sans chemin)
+    const char *basePtr = strrchr(filename, '/');
+    if (basePtr) {
+        strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+    } else {
+        // Pas de '/' trouvé, vérifier aussi '\'
+        basePtr = strrchr(filename, '\\');
+        if (basePtr) {
+            strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+        } else {
+            strncpy(baseName, filename, sizeof(baseName) - 1);
+        }
+    }
+    
+    // Vérifier que le nom de fichier est valide (pas de caractères spéciaux dangereux)
+    for (i = 0; i < strlen(baseName); i++) {
+        if (baseName[i] < 32 || baseName[i] > 126) {
+            snprintf(response, responseSize, "Nom de fichier invalide: contient des caractères non autorisés.");
+            return result;
+        }
+    }
+    
+    // Construire le chemin complet vers le répertoire de réception
+    char destPath[512];
+    snprintf(destPath, sizeof(destPath), "files/receive/%s", baseName);
+    
+    // Préparer la réponse avec le chemin de destination
+    snprintf(response, responseSize, "FILES:%s|Le serveur a recu le fichier %s envoyé par %s", 
+         destPath, baseName, userName);
+    
+    // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
+    result = 3;  // Code spécial pour le transfert de fichier
+    
+    return result;
+}
+
+
+// Traite la commande @download
+int downloadCmd(const char *payload, const struct sockaddr_in *client, 
+               char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
+    
+    int result = 0;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client->sin_port);
+    
+    // Vérifier que l'utilisateur est connecté
+    int isConnected = 0;
+    char userName[PSEUDO_MAX] = "Anonyme";
+    int i = 0;
+    
+    while (i < numActiveUsers && !isConnected) {
+        if (strcmp(activeUsers[i].ip, client_ip) == 0 && 
+            activeUsers[i].port == client_port && 
+            activeUsers[i].isConnected == 1) {
+            isConnected = 1;
+            strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX);
+        }
+        i++;
+    }
+    
+    if (!isConnected) {
+        snprintf(response, responseSize, "Vous devez être connecté pour télécharger un fichier.");
+        return result;
+    }
+    
+    // Extraire le nom du fichier
+    char filename[256];
+    char baseName[256]; // Pour stocker seulement le nom du fichier sans chemin
+    memset(filename, 0, sizeof(filename));
+    memset(baseName, 0, sizeof(baseName));
+    
+    if (sscanf(payload, "@download %255s", filename) != 1) {
+        snprintf(response, responseSize, "Format invalide. Utilisez: @download <nom_fichier>");
+        return result;
+    }
+    
+    // Extraire le nom de base du fichier (sans chemin)
+    const char *basePtr = strrchr(filename, '/');
+    if (basePtr) {
+        strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+    } else {
+        // Pas de '/' trouvé, vérifier aussi '\'
+        basePtr = strrchr(filename, '\\');
+        if (basePtr) {
+            strncpy(baseName, basePtr + 1, sizeof(baseName) - 1);
+        } else {
+            strncpy(baseName, filename, sizeof(baseName) - 1);
+        }
+    }
+    
+    // Construire le chemin complet pour vérifier si le fichier existe
+    char sourcePath[512];
+    snprintf(sourcePath, sizeof(sourcePath), "files/send/%s", baseName);
+    
+    // Vérifier que le fichier existe dans le dossier files/send/
+    FILE *file = fopen(sourcePath, "r");
+    if (!file) {
+        snprintf(response, responseSize, "Le fichier %s n'existe pas dans le dossier de partage.", baseName);
+        return result;
+    }
+    fclose(file);
+    
+    // Préparer la réponse avec le chemin source
+    snprintf(response, responseSize, "FILES:%s|Le serveur a envoyé le fichier %s demandé par %s", 
+         sourcePath, baseName, userName);
+    
+    // Retourner un code spécial pour indiquer que le transfert de fichier doit être traité
+    result = 4;  // Code spécial pour le transfert de fichier download
     
     return result;
 }

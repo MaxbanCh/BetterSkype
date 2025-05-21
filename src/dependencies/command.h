@@ -42,6 +42,10 @@ int disconnectCmd(const char *payload, const struct sockaddr_in *client, char *r
 // Traite la commande @msg pour envoyer un message privé
 int sendPrivateMsg(const char *payload, const struct sockaddr_in *sender_client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
 
+int uploadCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int numActiveUsers);
+             
+int downloadCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int numActiveUsers);
+
 int helpCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
 
 int pingCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int numActiveUsers);
