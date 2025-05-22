@@ -95,7 +95,6 @@ int associateUser(const char *pseudo, const struct sockaddr_in *client, User *ac
         i = 0;
         
         while (i < MAX_USERS) {
-            printf("activeUsers[%d].isConnected: %d\n", i, activeUsers[i].isConnected);
             if (i != index && activeUsers[i].isConnected == 1) {
                 anyOtherConnected = 1;
             }

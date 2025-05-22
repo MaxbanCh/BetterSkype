@@ -80,7 +80,7 @@ int joinSalon(Salon *salon, char *user) {
     }
 
     // Ajouter l'utilisateur au salon
-    int res = addUser(salon->users, user);
+    addUser(salon->users, user);
     if (salon->users == NULL) {
         printf("Erreur lors de l'ajout de l'utilisateur au salon.\n");
         return -1;
@@ -152,7 +152,7 @@ int leaveSalon(Salon *salon, char *user) {
     return 0;
 }
 
-int saveMessage(Salon *salon, char *message, char *username) {
+int saveMessage(Salon *salon, const char *message, char *username) {
     char *name = salon->name;
     // Vérifier si le salon existe
     char filepath[256];

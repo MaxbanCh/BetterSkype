@@ -4,8 +4,8 @@
 #include "message.h"
 
 typedef struct {
-    const char *operation;
-    const char *filename;
+    char *operation;
+    char *filename;
     struct sockaddr_in client;
     int socketTCP;
 } FileTransferParams;

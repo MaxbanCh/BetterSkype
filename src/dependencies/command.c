@@ -50,14 +50,8 @@ CommandType getCommandType(const char *payload)
     else if (strncmp(payload, "@download",  9) == 0) {
         cmdType = cmdDownload;
     }
-    // else if (strncmp(payload, "@salon", 6) == 0) {
-    //     cmdType = cmdSalon;
-    // }
     else if (strncmp(payload, "@create", 7) == 0) {
         cmdType = cmdCreate;
-    }
-    else if (strncmp(payload, "@list", 5) == 0) {
-        cmdType = cmdList;
     }
     else if (strncmp(payload, "@join", 5) == 0) {
         cmdType = cmdJoin;
@@ -77,13 +71,13 @@ char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr
     
     // Check if user is connected
     int isConnected = 0;
-    char *userName = malloc(PSEUDO_MAX); // Dynamically allocate memory
+    char *userName = malloc(PSEUDO_MAX); 
     if (!userName) {
         perror("Memory allocation failed");
         return NULL;
     }
     
-    strcpy(userName, "Anonyme"); // Default value
+    strcpy(userName, "Anonyme"); 
     int i = 0;
     
     while (i < numActiveUsers && !isConnected) {
@@ -92,28 +86,28 @@ char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr
             activeUsers[i].isConnected == 1) {
             isConnected = 1;
             strncpy(userName, activeUsers[i].pseudo, PSEUDO_MAX - 1);
-            userName[PSEUDO_MAX - 1] = '\0'; // Ensure null termination
+            userName[PSEUDO_MAX - 1] = '\0'; 
         }
         i++;
     }
 
-    return userName; // Now returns dynamically allocated memory that must be freed by the caller
+    return userName; 
 }
 
 int pingCmd(const char *payload, const struct sockaddr_in *client, 
            char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
-    // Get client information
+    
     char *userName = getUserwithIp(activeUsers, numActiveUsers, client);
     
-    // Format a personalized response
+   
     if (userName != NULL && strcmp(userName, "Anonyme") != 0) {
         snprintf(response, responseSize, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
     } else {
         snprintf(response, responseSize, "Pong! Serveur en ligne. Vous n'êtes pas connecté.");
     }
     
-    return 1; // Success - ping response created successfully
+    return 1; 
 }
 
 // Fonction d'enregistrement d'un nouvel utilisateur

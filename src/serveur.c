@@ -278,7 +278,7 @@ int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
     sockfd = initSocket();
-    User *activeUsers = (int *)malloc(sizeof(User) * MAX_USERS);
+    User *activeUsers =malloc(sizeof(User) * MAX_USERS);
     if (activeUsers == NULL) {
         perror("Erreur d'allocation mémoire pour activeUsers");
         close(sockfd);
@@ -468,13 +468,6 @@ int main(void) {
                                         activeUsers,
                                         numActiveUsers);
                 break;
-            // case cmdSalon:
-            //     status = salonCmd(msg.payload,
-            //                       &client,
-            //                       response,
-            //                       sizeof(response),
-            //                       salons);
-            //     break;
             case cmdJoin:
                 status = joinCmd(msg.payload,
                                 &client,

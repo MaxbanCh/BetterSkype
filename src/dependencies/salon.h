@@ -18,7 +18,7 @@ int joinSalon(Salon *salon, char *user);
 
 int leaveSalon(Salon *salon, char *user);
 
-int saveMessage(Salon *salon, char *message, char *username);
+int saveMessage(Salon *salon, const char *message, char *username);
 
 
 //////////////////////////
