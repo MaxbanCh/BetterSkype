@@ -101,14 +101,14 @@ char *getUserwithIp(User *activeUsers, int numActiveUsers, const struct sockaddr
 }
 
 int pingCmd(const char *payload, const struct sockaddr_in *client, 
-           char *response, size_t response_size, User *activeUsers, int numActiveUsers) {
+           char *response, size_t responseSize, User *activeUsers, int numActiveUsers) {
     
     // Get client information
     char *userName = getUserwithIp(activeUsers, numActiveUsers, client);
     
     // Format a personalized response
     if (userName != NULL && strcmp(userName, "Anonyme") != 0) {
-        snprintf(response, response_size, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
+        snprintf(response, responseSize, "Pong! Serveur en ligne. Vous êtes connecté en tant que %s.", userName);
     } else {
         snprintf(response, responseSize, "Pong! Serveur en ligne. Vous n'êtes pas connecté.");
     }
@@ -168,7 +168,7 @@ int registerUser(const char *payload, const struct sockaddr_in *client, char *re
 }
 
 // Traitement de la commande @connect
-int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t response_size, User *activeUsers, int *numActiveUsers, Salon *salon) {
+int connectCmd(const char *payload, const struct sockaddr_in *client, char *response, size_t responseSize, User *activeUsers, int *numActiveUsers, Salon *salon) {
     char pseudo[PSEUDO_MAX];
     char password[64];
     memset(pseudo, 0, sizeof(pseudo));
@@ -229,9 +229,9 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
             // Ajouter l'utilisateur au salon
             if (joinSalon(salon, pseudo) == 0){
                 printf("L'utilisateur %s a rejoint le salon %s\n", pseudo, salon->name);
-                snprintf(response, response_size, "Connecté et ajouté au salon %s", salon->name);
+                snprintf(response, responseSize, "Connecté et ajouté au salon %s", salon->name);
             } else {
-                snprintf(response, response_size, "Connecté mais impossible d'ajouter au salon %s", salon->name);
+                snprintf(response, responseSize, "Connecté mais impossible d'ajouter au salon %s", salon->name);
             }
             
                 result = 1;

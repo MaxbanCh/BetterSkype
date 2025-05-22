@@ -25,14 +25,6 @@
 int serverRunning = 1;
 int sockfd; // Socket globale pour pouvoir la fermer avec ctrl+c
 
-// Structure pour passer les paramètres au thread de transfert
-typedef struct {
-    char *operation;
-    char *filename;
-    struct sockaddr_in client;
-    int socketTCP;
-} FileTransferParams;
-
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
 static void handleSigint(int sig) {
     (void)sig;  
