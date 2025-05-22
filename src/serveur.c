@@ -278,7 +278,13 @@ int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
     sockfd = initSocket();
-    User activeUsers[MAX_USERS];
+    User *activeUsers = (int *)malloc(sizeof(User) * MAX_USERS);
+    if (activeUsers == NULL) {
+        perror("Erreur d'allocation mémoire pour activeUsers");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+    memset(activeUsers, 0, sizeof(User) * MAX_USERS); // Initialiser à zéro
     int  numActiveUsers = 0;
     char buffer[BUFFER_MAX];
     struct sockaddr_in client;

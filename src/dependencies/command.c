@@ -226,13 +226,13 @@ int connectCmd(const char *payload, const struct sockaddr_in *client, char *resp
             // Authentification réussie
             if (associateUser(pseudo, client, activeUsers, numActiveUsers)) {
                 snprintf(response, responseSize, "Connecté en tant que %s", pseudo);
-            // Ajouter l'utilisateur au salon
-            if (joinSalon(salon, pseudo) == 0){
-                printf("L'utilisateur %s a rejoint le salon %s\n", pseudo, salon->name);
-                snprintf(response, responseSize, "Connecté et ajouté au salon %s", salon->name);
-            } else {
-                snprintf(response, responseSize, "Connecté mais impossible d'ajouter au salon %s", salon->name);
-            }
+                // Ajouter l'utilisateur au salon
+                if (joinSalon(salon, pseudo) == 0){
+                    printf("L'utilisateur %s a rejoint le salon %s\n", pseudo, salon->name);
+                    snprintf(response, responseSize, "Connecté et ajouté au salon %s", salon->name);
+                } else {
+                    snprintf(response, responseSize, "Connecté mais impossible d'ajouter au salon %s", salon->name);
+                }
             
                 result = 1;
             } else {
