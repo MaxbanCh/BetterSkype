@@ -19,18 +19,11 @@
 #include "user.h"
 #include "command.h"
 #include "dependencies/TCPFile.h"       
-#include <pthread.h>  // Ajouté pour gérer les threads
+#include <pthread.h>  // Ajouté pour gérer les threads#include <pthread.h>
+#include "salon.h"
 
 int serverRunning = 1;
 int sockfd; // Socket globale pour pouvoir la fermer avec ctrl+c
-
-// Structure pour passer les paramètres au thread de transfert
-typedef struct {
-    char *operation;
-    char *filename;
-    struct sockaddr_in client;
-    int socketTCP;
-} FileTransferParams;
 
 // Handler de signal SIGINT (Ctrl+C) pour arrêter proprement le serveur
 static void handleSigint(int sig) {
@@ -285,10 +278,21 @@ int main(void) {
     signal(SIGTERM, handleSigint); // dans le cas ou on fait ctrl+c
     signal(SIGINT, handleSigint); // Handler pour Ctrl+C pour le shutdown
     sockfd = initSocket();
-    User activeUsers[MAX_USERS];
+    User *activeUsers =malloc(sizeof(User) * MAX_USERS);
+    if (activeUsers == NULL) {
+        perror("Erreur d'allocation mémoire pour activeUsers");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+    memset(activeUsers, 0, sizeof(User) * MAX_USERS); // Initialiser à zéro
     int  numActiveUsers = 0;
     char buffer[BUFFER_MAX];
     struct sockaddr_in client;
+
+    salonList *salons = createSalonList();
+    Salon *acceuil = createSalon("accueil", "admin");
+    printf("Salon %s créé\n", acceuil->name);
+    addSalon(salons, acceuil);
 
     while (serverRunning) {
         if (recvMessage(sockfd, buffer, sizeof(buffer), &client) < 0)
@@ -314,7 +318,8 @@ int main(void) {
                                     response,
                                     sizeof(response),
                                     activeUsers,
-                                    &numActiveUsers);
+                                    &numActiveUsers,
+                                    acceuil);
                 break;
 
             case cmdDisconnect:
@@ -453,6 +458,34 @@ int main(void) {
                     status = handleFileTransfer(&msg, sockfd, &client);
                 }
                 break;
+
+            case cmdCreate:
+                status = createSalonCmd(msg.payload,
+                                        &client,
+                                        response,
+                                        sizeof(response),
+                                        salons,
+                                        activeUsers,
+                                        numActiveUsers);
+                break;
+            case cmdJoin:
+                status = joinCmd(msg.payload,
+                                &client,
+                                response,
+                                sizeof(response),
+                                salons,
+                                activeUsers,
+                                numActiveUsers);
+                break;
+            case cmdLeave:
+                status = leaveCmd(msg.payload,
+                                &client,
+                                response,
+                                sizeof(response),
+                                salons,
+                                activeUsers,
+                                numActiveUsers);
+                break;
             
             default: {
                 int authenticated = 0;
@@ -470,6 +503,40 @@ int main(void) {
 
                 if (authenticated) {
                     sendAcR(sockfd, &client);
+                    // Envoyer un message à tous les utilisateurs dans le salon de l'expéditeur
+                    userList *salonUsers;
+                    if (sendMessageSalon(msg.payload, 
+                                    &client, 
+                                    response, 
+                                    sizeof(response), 
+                                    salons, 
+                                    activeUsers, 
+                                    numActiveUsers,
+                                    &salonUsers) > 0) {
+                        
+                        // Parcourir la liste des utilisateurs du salon et envoyer le message à chacun
+                        UserNode *current = salonUsers->head;
+                        while (current != NULL) {
+                            // Pour chaque utilisateur du salon, trouver son adresse et envoyer le message
+                            for (int i = 0; i < numActiveUsers; i++) {
+                                if (strcmp(activeUsers[i].pseudo, current->user) == 0 && 
+                                    activeUsers[i].isConnected) {
+                                    struct sockaddr_in dest = {
+                                        .sin_family = AF_INET,
+                                        .sin_port = htons(activeUsers[i].port)
+                                    };
+                                    inet_pton(AF_INET, activeUsers[i].ip, &dest.sin_addr);
+                                    
+                                    // Envoyer le message formaté
+                                    sendto(sockfd, response, strlen(response), 0, 
+                                        (struct sockaddr*)&dest, sizeof(dest));
+                                    
+                                    printf("Message salon envoyé à %s\n", activeUsers[i].pseudo);
+                                }
+                            }
+                            current = current->next;
+                        }
+                    }
                 } else {
                     const char *auth_req =
                         "Veuillez vous authentifier avec '@connect login mdp'";
@@ -528,3 +595,4 @@ int main(void) {
 
     return EXIT_SUCCESS;
 }
+

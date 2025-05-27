@@ -32,6 +32,15 @@ COMMANDES DISPONIBLES
     Télécharger un fichier partagé.
     Exemple: @download document.pdf
 
+@create salon 
+    Créer un nouveau salon de discussion
+
+@join salon
+    Rejoindre un salon existant
+
+@leave salon
+    Quitter un salon
+
 @shutdown
     Se déconnecter proprement et fermer l'application.
 

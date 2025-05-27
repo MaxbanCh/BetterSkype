@@ -8,14 +8,18 @@
 #include <stdbool.h>
 #include "message.h"  // structure contenant les champs du message
 #include "header.h"
+#include "TCPFile.h"
+#include <pthread.h>
+#include <sys/time.h>  // Pour struct timeval
+#include <errno.h>     // Pour les constantes d'erreur
 
 
-static void handleSigint() {
-    // (void)sig;  
-    printf("\nArrêt serveur\n");
-    //close(sockfd); 
-    exit(EXIT_SUCCESS);
-}
+// static void handleSigint() {
+//     // (void)sig;  
+//     printf("\nArrêt serveur\n");
+//     //close(sockfd); 
+//     exit(EXIT_SUCCESS);
+// }
 
 int initTCPSocketServer() {
     int fd = socket(PF_INET, SOCK_STREAM, 0); 
@@ -75,14 +79,33 @@ int initTCPSocketClient(char *ip) {
 
 int connexionTCP(int socket)
 {
-	struct sockaddr_in aC;
+    struct sockaddr_in aC;
     socklen_t lg = sizeof(struct sockaddr_in);
+    
+    // Configurer un timeout pour accept()
+    struct timeval tv;
+    tv.tv_sec = 10;  // 10 secondes d'attente maximum
+    tv.tv_usec = 0;
+    
+    // Appliquer le timeout à la socket
+    if (setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) < 0) {
+        perror("Erreur lors de la configuration du timeout");
+        return -1;
+    }
+    
+    printf("En attente de connexion TCP (timeout: 10s)...\n");
     int dSC = accept(socket, (struct sockaddr*) &aC, &lg);
 
     if (dSC == -1) {
-        perror("Erreur acceptation connexion");
-        close(socket);
-        exit(1);
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Timeout atteint
+            printf("Timeout: aucun client ne s'est connecté dans les 10 secondes\n");
+            return -2;  // Code spécifique pour le timeout
+        } else {
+            // Autre erreur
+            perror("Erreur acceptation connexion");
+            return -1;  // Ne pas terminer le programme, juste retourner une erreur
+        }
     }
     
     printf("Client connecté depuis %s:%d\n", 
@@ -91,7 +114,7 @@ int connexionTCP(int socket)
     return dSC;
 }
 
-int sendFile(int socket, char *file)
+int sendFile(int socket, const char *file)
 {
     FILE *fp;
     char buffer[BUFFER_MAX];
@@ -105,6 +128,8 @@ int sendFile(int socket, char *file)
     fp = fopen(file, "rb");
     if (fp == NULL) {
         perror("Erreur lors de l'ouverture du fichier");
+        fileSize = -1;  // Utiliser -1 comme taille de fichier pour signaler une erreur
+        send(socket, &fileSize, sizeof(fileSize), 0);
         flag = -1;
     }
     
@@ -142,7 +167,7 @@ int sendFile(int socket, char *file)
         
         // Attendre l'accusé de réception pour ce bloc
         ret = recv(socket, &ack, 1, 0);
-        if (ret <= 0 || ack != 'A' && flag == 0) {  // 'A' pour ACK
+        if (ret <= 0 || (ack != 'A' && flag == 0)) {  // 'A' pour ACK
             fprintf(stderr, "Erreur: accusé de réception non reçu ou incorrect pour un bloc\n");
             fclose(fp);
             flag = -5;
@@ -153,7 +178,7 @@ int sendFile(int socket, char *file)
     return flag;  // Succès
 }
 
-int receiveFile(int socket, char *file)
+int receiveFile(int socket, const char *file)
 {
     FILE *fp;
     char buffer[BUFFER_MAX];
@@ -181,6 +206,12 @@ int receiveFile(int socket, char *file)
     ret = recv(socket, &fileSize, sizeof(fileSize), 0);
     if (ret <= 0) {
         perror("Erreur lors de la réception de la taille du fichier");
+        flag = -1;
+    }
+
+    printf("Taille du fichier à recevoir : %ld octets\n", fileSize);
+    if (fileSize == -1) {
+        printf("Le client a signalé une erreur avec le fichier source\n");
         flag = -1;
     }
 
@@ -229,6 +260,63 @@ int receiveFile(int socket, char *file)
         fclose(fp);
     }
     return flag;  // Succès
+}
+
+
+void *fileTransferThreadServer(void *arg) {
+    FileTransferParams *params = (FileTransferParams *)arg;
+    int result = 0;
+    int socketTCP = params->socketTCP;
+    
+    printf("Thread démarré pour %s du fichier %s\n", 
+           params->operation, params->filename);
+    
+    int clientTCP = connexionTCP(socketTCP);
+    if (clientTCP < 0) {
+        if (clientTCP == -2) {
+            printf("Aucun client ne s'est connecté dans le délai imparti.\n");
+            printf("Probablement car le fichier n'existe pas côté client ou autre erreur.\n");
+        }
+        else {
+            printf("Échec connexion TCP avec le client\n");
+        }
+        closeServer(socketTCP, -1);
+        free(params);
+        pthread_exit(NULL);
+        return NULL;  // Retourne NULL en cas d'échec
+    }
+
+    // Ajouter un petit délai pour s'assurer que la connexion est établie
+    sleep(1);
+    
+    if (strcmp(params->operation, "@upload") == 0) {
+        // Client upload = serveur reçoit
+        printf("Réception du fichier %s en cours...\n", params->filename);
+        result = receiveFile(clientTCP, params->filename);
+        if (result == -2) {
+            printf("Le client a indiqué que le fichier source n'existe pas\n");
+        } else if (result == 0) {
+            printf("Fichier reçu avec succès\n");
+        } else {
+            printf("Erreur lors de la réception du fichier (code %d)\n", result);
+        }
+    } else if (strcmp(params->operation, "@download") == 0) {
+        // Client download = serveur envoie
+        printf("Envoi du fichier %s en cours...\n", params->filename);
+        result = sendFile(clientTCP, params->filename);
+        if (result == 0) {
+            printf("Fichier envoyé avec succès\n");
+        } else {
+            printf("Erreur lors de l'envoi du fichier (code %d)\n", result);
+        }
+    }
+    
+    // Fermer les connexions TCP pour ce transfert
+    printf("Fermeture des connexions TCP\n");
+    closeServer(socketTCP, clientTCP);
+    free(params);
+    pthread_exit(NULL);
+    return NULL;  // Cette ligne ne sera jamais exécutée mais élimine l'avertissement
 }
 
 void closeServer(int socket, int socketClient)

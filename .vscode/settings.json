@@ -2,6 +2,8 @@
     "files.associations": {
         "inet.h": "c",
         "header.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c"
     }
 }

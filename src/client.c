@@ -16,10 +16,10 @@
 #include "client.h"
 #include "dependencies/TCPFile.h"
 
-// ------  Variables globales ------
-#define SERVER_IP   "127.0.0.1"         
+// ------  Variables globales ------      
 #define SERVER_PORT 12345
 
+char SERVER_IP[INET_ADDRSTRLEN] = "127.0.0.1";  // IP par défaut
 int clientRunning = 1; 
 int globalSocket = -1;  // Socket globale pour la déconnexion
 struct sockaddr_in *globalServer; // Adresse serveur globale
@@ -252,7 +252,15 @@ void handleTCPFileTransfer(char *buffer) {
     }
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    if (argc > 1) {
+        strncpy(SERVER_IP, argv[1], INET_ADDRSTRLEN - 1);
+        SERVER_IP[INET_ADDRSTRLEN - 1] = '\0'; 
+        printf("IP utilisée: %s\n", SERVER_IP);
+    } else {
+        printf("IP par défaut utilisée: %s\n", SERVER_IP);
+        printf("Pour utiliser une IP spécifique: %s <adresse_ip>\n", argv[0]);
+    }
     int dS = createSocket();
     if (dS < 0) {
         perror("socket");

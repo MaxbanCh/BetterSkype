@@ -104,8 +104,10 @@ int associateUser(const char *pseudo, const struct sockaddr_in *client, User *ac
         // Si aucun autre utilisateur n'est connecté, c'est l'administrateur
         if (anyOtherConnected == 0) {
             activeUsers[index].isAdmin = 1;
+            printf("L'utilisateur %s est l'administrateur\n", pseudo);
         } else {
             activeUsers[index].isAdmin = 0;
+            printf("L'utilisateur %s n'est pas administrateur\n", pseudo);
         }
         }
     
